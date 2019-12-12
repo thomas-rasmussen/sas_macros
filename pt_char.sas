@@ -1,5 +1,5 @@
 /*******************************************************************************
-AUTHOR:     Thomas Bøjer Rasmussen
+AUTHOR:     Thomas BÃ¸jer Rasmussen
 VERSION:    1.0.0
 DATE:       2019-08-18
 LICENCE:    Creative Commons CC0 1.0 Universal  
@@ -14,7 +14,7 @@ for how the output dataset is intended to be used with proc report.
 Developed using SAS 9.4.
 
 Find the newest version of the macro and accompanying examples at:
-https://github.com/ThomasBoejerRasmussen/sas_macros
+https://github.com/thomas-rasmussen/sas_macros
 
 PARAMETERS:	
 *** REQUIRED ***
@@ -90,11 +90,11 @@ dec_pct:            Control the number of decimals to show for percentage
 sep_dec:            Specify the decimal separator symbol to use. Enclose in 
                     double-quotes. Defualt is sep_dec = ".". Use 
                     sep_dec = remove to remove the decimal separator altogether. 
-                    The "¤" and "@" symbols are not allowed as delimiters.
+                    The "Â¤" and "@" symbols are not allowed as delimiters.
 sep_digit:          Specify the digit group separator symbol to use. Enclose 
                     in double-quotes. Default is sep_digit = ".". Use 
                     sep_digit = remove to remove the digit group separator
-                    altogether. The "¤" and "@" symbols are not allowed.
+                    altogether. The "Â¤" and "@" symbols are not allowed.
 allow_d_miss:       Specify if dichotomous variables are allowed to have 
                     missing values. 
                     Yes (allow_d_miss = y) / No (allow_d_miss = n). 
@@ -415,13 +415,13 @@ output if corrrectly specified as a non-negative integer */
 
 /* Check that sep_dec and sep_digit is specified correctly as "remove" or 
 on the form: starts with a double-quote, followed by one or more 
-symbols(none of which are the symbols "¤" or "@", and ends in double-quote. */
-%if %eval(&sep_dec ne remove and %sysfunc(prxmatch('^["][^¤@]*["]$|^remove$', &sep_dec)) = 0) %then %do;
+symbols(none of which are the symbols "Â¤" or "@", and ends in double-quote. */
+%if %eval(&sep_dec ne remove and %sysfunc(prxmatch('^["][^Â¤@]*["]$|^remove$', &sep_dec)) = 0) %then %do;
   %put ERROR: sep_dec does not have a valid value!;
   %goto end_of_macro;  
 %end;
 
-%if %sysfunc(prxmatch('^["][^¤@]*["]$|^remove$', &sep_digit)) = 0 %then %do;
+%if %sysfunc(prxmatch('^["][^Â¤@]*["]$|^remove$', &sep_digit)) = 0 %then %do;
   %put ERROR: sep_digit does not have a valid value!;
   %goto end_of_macro;  
 %end;
@@ -1031,14 +1031,14 @@ TRANSFORM DECIMAL / DIGIT GROUP SYMBOLS
 data _pc_data8;
   set _pc_data7;
   /* Transform separator symbols to unused symbols */
-  __stat_char = tranwrd(__stat_char, ".", "¤");
+  __stat_char = tranwrd(__stat_char, ".", "Â¤");
   __stat_char = tranwrd(__stat_char, ",", "@");
   /* Transform decimal separator symbol */
   %if &sep_dec = remove %then %do;
-    __stat_char = compress(__stat_char, "¤");
+    __stat_char = compress(__stat_char, "Â¤");
   %end;
   %else %do;
-    __stat_char = tranwrd(__stat_char, "¤", &sep_dec);
+    __stat_char = tranwrd(__stat_char, "Â¤", &sep_dec);
   %end;
   /* Transform digit group separator. */
   %if &sep_digit = remove %then %do;
