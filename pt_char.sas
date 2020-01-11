@@ -1,370 +1,255 @@
 /*******************************************************************************
-AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    1.0.0
-DATE:       2019-08-18
+AUTHOR:     Thomas Boejer Rasmussen
+VERSION:    0.2.0
+DATE:       2020-01-11
 LICENCE:    Creative Commons CC0 1.0 Universal  
             (https://www.tldrlegal.com/l/cc0-1.0)
 ********************************************************************************
 DESCRIPTION:
-Produces a so-called "table 1" with summarized patient characteristics based 
-on an input dataset with patient level obervations and a set of 
-variables/patient characteristics. See the accompanying examples
-for how the output dataset is intended to be used with proc report. 
-
+Produces a so-called "table 1" with aggregated patient characteristics based 
+on an input dataset with patient level obervations on a set of 
+variables/patient characteristics. See the accompanying examples for how the 
+output dataset is intended to be used with proc report. 
+  
 Developed using SAS 9.4.
 
 Find the newest version of the macro and accompanying examples at:
 https://github.com/thomas-rasmussen/sas_macros
-
-PARAMETERS:	
+********************************************************************************
+NOTES:
+Version 0.2.0 - List of changes (not exhaustive):
+- Changed version numbering to reflect that the macro is still under active
+  development and most changes will likely not be backwards-compatible.
+  This change will hopefully not cause too much confusion. Few people (if any) 
+  are using the macro at this point.
+- Extensive renaming of macro parameters to (hopefully) make the macro more
+  intuitive to understand and use.
+- Added a macro parameter controlling whether or not percentage signs are 
+  included for percentage statistics in the output.
+- Added a where-condition.
+- Fixed a bug, where if a variable was included in more than one of var_list,
+  strata, and by, the macro would break down.
+- It is now possible to choose what statistics to calculate for each separate
+  variable in var_list using the var_stats macro parameter.
+********************************************************************************
+PARAMETERS:
 *** REQUIRED ***
-in_ds:		          (libname.)member-name of input dataset with the population 
-                    of interest. A filepath enclosed in quotes can also be used.
-out_ds:		          (libname.)member-name of output dataset.
-                    A filepath enclosed in quotes can also be used.
-var_list:           List of patients characteristic variables. Variable
-                    names needs to be separated by spaces " ". Variables with 
-                    a double-underscore "__" prefix and variables named "n"
-                    are not allowed.    
- 
+in_ds:            (libname.)member-name of input dataset or a filepath enclosed
+                  in quotes.
+out_ds:           (libname.)member-name of output dataset or a filepath enclosed
+                  in quotes. The output dataset is on long format with the
+                  following variables:
+                  - __var: Variable name. A variable __n counting number of
+                    observations are added to the list of variables specified
+                    in "var_list" (see below). Furthermore categorical 
+                  variables have a line for each value and an added title line.
+                  - __label: Variable labels. 
+                  - __stat_char: variable statistics as a formatted text string.
+                  - __stat_num1 - __stat_num3: numerical variables with raw
+                    summary statistics.
+                  - __report_dummy: dummy variable intended to be used with
+                    proc report to make the final table. See examples.
+                  If any by or strata variables are specified these are also
+                  included in the output dataset. If a strata variable is
+                  provided, an overall strata is also added.
+var_list:         List of patient characteristic variables.     
 *** OPTIONAL ***
-var_types:          List of variable types (dichotomous (d) / categorical (cat)
-                    / continuous (cont)) corresponding to the variables
-                    given in var_list. The types are automatically guessed
-                    from the input data if the default value var_types = auto
-                    is given. To manually overwrite this, use d/cat/cont to 
-                    specify the types (in the same 
-                    order as the variables are listed in var_list) and use 
-                    spaces " " as the delimiter. The algorithm guessing
-                    the types works as follows:
-                    1) If character variable: categorical
-                    2) Else, if numeric and one or two distinct values that
-                       are zero and/or one: dichotomous
-                    3) Else, if numeric and fewer than &cont_cutoff (see below)
-                       distinct values: categorical.
-                    4) Else: continuous.
-group_var:          A grouping variable can be specified, so that the output
-                    will contain summarized patients characteristics in stratas
-                    of the values of group_var. Furthermore, a
-                    total category is created that will have a missing value
-                    "." for a numeric group_var og a empty value "" for a 
-                    character group_var. As a consequence a grouping variable
-                    is not allowed to take missing / empty values. The default
-                    is group_var = null, ie no grouping variable is 
-                    provided. As a consequence, a variable named null can
-                    not be used as a grouping variable.
-by_vars:            Specify by-variables. If more than one by-variable is
-                    specified, use spaces " " as delimiters. The default is
-                    by_vars = null, ie no by_vars. As a consequence variables
-                    named "null" are not allowed if multiple variables are
-                    specified, and as with group_var, a variable named "null"
-                    can not be used as a single by-var.
-weight:             Assign a weight to each oberservation, either by giving a
-                    numeric value that is used as a weight for all observations,
-                    or by speficying a variable that holds the weight for each
-                    observation. Default value is weight = 1, ei. no weights.
-cont_cutoff:        If var_types = auto then cont_cutoff is used to decide
-                    whether or not a numerical variable is a categorical or
-                    continuous. See var_types documentation. Default value
-                    is cont_cutoff = 20. 
-median_mean:        Specify if median (Q1-Q3) (median_mean = median) or 
-                    mean (stderr) (median_mean = mean) statistics are calculated
-                    for continuous variales. Default is median_mean = median.
-npct_pctn:          Specify if n (%)  (npct_pctn = npct) or 
-                    % (n) (npct_pctn) statistics are calculated for 
-                    for dichotomous and categorical variales. 
-                    Default is npct_pctn = npct.
-dec_n:              Control the number of decimals to show in the statistics
-                    showing the total number of patients in the population
-                    (or in each strata defined by group_var).
-                    Default is dec_n = 0.
-dec_d_cat:          Control the number of decimals to show for the "n" 
-                    part of the n (%) / (%) n part of statistics 
-                    for dichotomous and categorical variables. 
-                    Default is dec_d_cat = 0.
-dec_cont:           Control the number of decimals to show for the 
-                    median/mean/stedrr/Q1/Q3 statistics of continuous
-                    variables. Default is dec_cont = 2.
-dec_pct:            Control the number of decimals to show for percentage
-                    statistics. Default is dec_pct = 2.
-sep_dec:            Specify the decimal separator symbol to use. Enclose in 
-                    double-quotes. Defualt is sep_dec = ".". Use 
-                    sep_dec = remove to remove the decimal separator altogether. 
-                    The "¤" and "@" symbols are not allowed as delimiters.
-sep_digit:          Specify the digit group separator symbol to use. Enclose 
-                    in double-quotes. Default is sep_digit = ".". Use 
-                    sep_digit = remove to remove the digit group separator
-                    altogether. The "¤" and "@" symbols are not allowed.
-allow_d_miss:       Specify if dichotomous variables are allowed to have 
-                    missing values. 
-                    Yes (allow_d_miss = y) / No (allow_d_miss = n). 
-                    Default is allow_d_miss = n. Note that if missing values
-                    are allowed, that these observations are still included in
-                    the denominator when calculating percentages!
-allow_cont_miss:    Specify if continuous variables are allowed to have 
-                    missing values.
-                    Yes (allow_d_miss = y) / No (allow_d_miss = n). 
-                    Default is allow_cont_miss = n.
-total_group_last:   If a grouping variable is specified in group_var,
-                    specify if the total group should be first
-                    (total_group_last = n) or last (total_group_last = y) in
-                    the output to help facilitate whether the total group
-                    should be placed to the left (first) or right (last) in
-                    the table. Default is total_group_last = y.   
-inc_num_stat_vars:  Toggle whether or not additional numeric variables
-                    with each component of the statistics are included in
-                    the output. Yes (inc_num_stat_vars = y) or 
-                    no (nc_num_stat_vars = n). Default is inc_num_stat_vars = n.
-inc_report_dummy:   Toggle whether or not to include a dummy variable in
-                    the output to help facility making the final tables
-                    in proc report. Yes (inc_report_dummy = y) or
-                    no (inc_report_dummy = n). Default is inc_report_dummy = y.
-del:                Specify if temporay datasets created by the macro are 
-                    deleted. Yes (del = y) or No (del = n). Default is 
-                    del = y.
+by:               Space-separated list of by variables
+strata:           Stratification variable. Overall strata is added to data.
+                  Can not contain missing values / empty strings as these are 
+                  used to denote overall stratas. A stratification variable
+                  is not allowed to be also included in "by".
+where:            Condition used to to restrict the input dataset in a where-
+                  statement, eg where = %str(var = "value").
+var_types:        Space-separated list of variable types associated with 
+                  variables in var_list. Variable types are automatically 
+                  guessed from the input data if the default value 
+                  var_types = auto is given. To manually overwrite this, 
+                  specify the type of each variable (see examples):
+                  - dichotomous: d
+                  - categorical: cat
+                  - continuous: cont
+                  The algorithm guessing the types works as follows:
+                  1) If character variable: categorical
+                  2) Else, if numeric and one or two distinct values that
+                     are zero and/or one: dichotomous
+                  3) Else, if numeric and "cat_groups_max" or fewer
+                     distinct values: categorical. (see "cat_groups_max" below)
+                  4) Else: continuous.
+var_stats:        Statistics to calculate for each variable in var_list. If the 
+                  default value var_stats = auto is given, the statistics are 
+                  automatically chosen based on the value of stat_cont and 
+                  stat_d (see below). Alternatively, the statistics for each 
+                  variable can be provided manually. The chosen statistics must 
+                  be compatible with the variable type of the variable, see 
+                  stat_cont and stat_d for possible values (see examples). 
+                  If var_stats is used manually, use stat_d to control the 
+                  statistics for the calculated "__n" variable.
+stats_cont:       Statistics to calculate for continuous variables.
+                  - Median (Q1-Q3): stat_cont = median_q1q3 (default)
+                  - Mean (standard error): stat_cont = mean_stderr. 
+stats_d:          Statistics to calculate for dichotomous and categorical 
+                  variables:
+                  - N (%): stats_d = n_pct (default)
+                  - % (N): stats_d = pct_n 
+                  Note: Can also be used to manually control the statistics to 
+                  use for the calculated "__n" variable, when var_stats is 
+                  manually specified.
+weight:           Variable with observation weights. Default is weight = null, 
+                  eg no weights used.
+cat_groups_max:   If var_types = auto then cat_groups_max specify the maximum
+                  number of distinct values a numerical categorical variable 
+                  can take before being deemed a continuous variable. See 
+                  var_types documentation. Default is cat_groups_max = 20. 
+decimals_d:       Decimals to show for n statistics. Default is decimal_d = 0.
+decimals_cont:    Decimals to show for median/mean/stedrr/Q1/Q3 statistics.
+                  Default is decimal_cont = 1.
+decimals_pct:     Decimals to show for percentages. Default is decimal_pct = 1.
+decimal_mark:     Symbol used as decimal separator:
+                  - ".": decimal_mark = point (default)
+                  - ",": decimal_mark = comma
+                  - " ": demimal_mark = space
+big_mark:         Symbol used as digit group separator:
+                  - ".": big_mark = point
+                  - ",": big_mark = comma (default)
+                  - " ": big_mark = space
+                  - "":  big_mark = remove
+overall_pos:      Position of overall stratas in output:
+                  - First: overall_pos = first (default)
+                  - Last:  overall_pos = last 
+add_pct_symbol:   Add percentage symbols in percentage statistics: 
+                  - Yes: inc_pct_symbol = y
+                  - No:  inc_pct_symbol = n (default)
+add_num_comp:     Add numeric variables to output with each component of the
+                  statistics:
+                  - Yes: add_num_comp = y (default)
+                  - No:  add_num_comp = n
+report_dummy:     Include variable "__report_dummy" intented to be used to 
+                  finalize tables with proc report (see examples):
+                  - Yes: inc_report_dummy = y (default)
+                  - No:  inc_report_dummy = n
+allow_d_miss:     Allow dichotomous variables to have missing values: 
+                  - Yes: allow_d_miss = y
+                  - No:  allow_d_miss = n (default)
+                  Note that if allow_d_miss = y missing observations are 
+                  still included in percentages calculations.
+allow_cont_miss:  Allow continuous variables to have missing values:
+                  - Yes: allow_d_miss = y
+                  - No:  allow_d_miss = n (default)
+print:            Print macro variable values during execution of macro:
+                  - Yes: print_mv = y
+                  - No:  print_mv = n (default)
+del:              Delete intermediate datasets created by the macro:
+                  - Yes: del = y (default)
+                  - no:  del = n 
 ******************************************************************************/
-
 %macro pt_char(
-  in_ds             = ,
-  out_ds            = ,
-  var_list          = ,
-  var_types         = auto,
-  group_var         = null,
-  by_vars           = null,
-  weight            = 1,
-  cont_cutoff       = 20,
-  median_mean       = median,
-  npct_pctn         = npct,
-  dec_n             = 0,
-  dec_d_cat         = 0,
-  dec_cont          = 2,
-  dec_pct           = 2,
-  sep_dec           = ".",
-  sep_digit         = ",",
-  allow_d_miss      = n,
-  allow_cont_miss   = n,
-  total_group_last  = y,
-  inc_num_stat_vars = n,
-  inc_report_dummy  = y,
-  del               = y
+  in_ds           = ,
+  out_ds          = ,
+  var_list        = ,
+  by              = null,
+  strata          = null,
+  where           = %str(),
+  var_types       = auto,
+  var_stats       = auto,
+  stats_cont      = median_q1q3,
+  stats_d         = n_pct,
+  weight          = null,
+  cat_groups_max  = 20,
+  decimals_d      = 0,
+  decimals_cont   = 1,
+  decimals_pct    = 1,
+  decimal_mark    = point,
+  big_mark        = comma,
+  overall_pos     = first,
+  add_pct_symbol  = n,
+  add_num_comp    = y,
+  report_dummy    = y,
+  allow_d_miss    = n,
+  allow_cont_miss = n,
+  print           = n,
+  del             = y
 ) / minoperator mindelimiter = ' ';
 
-%local  i i_by_vars i_by_vars_ori i_min i_max i_nvalues 
-        i_var_list i_var_list_ori i_var_list_temp i_var_nmiss 
-        i_var_nvalues i_var_types i_vars i_vt
-        j j_var
-        by_vars_ori cat_label_datasets cat_vars cat_vars_ori ds_id 
-        group_var_ori group_var_nmiss nvalues rc stat_max_length
-        var_list_ori var_list_temp var_max_length vars w_min
-        ;   
 
-
-/*******************************************************************************	
+/*******************************************************************************
 INPUT PARAMETER CHECKS 
 *******************************************************************************/
+%local  vars i i_var ds_id rc cnt j j_var weight_vt;
 
-/* Check that none of the macro paramters are empty. */
-%let vars = in_ds out_ds var_list var_types group_var by_vars weight 
-            cont_cutoff median_mean npct_pctn dec_n dec_d_cat dec_cont dec_pct 
-            sep_dec sep_digit allow_d_miss allow_cont_miss total_group_last 
-            inc_num_stat_vars inc_report_dummy del;
+/* Check that none of the macro parameters (except possibly where) are empty. */
+%let vars =  
+  in_ds out_ds var_list by strata var_types var_stats stats_cont stats_d weight          
+  cat_groups_max decimals_d decimals_cont decimals_pct decimal_mark big_mark        
+  add_pct_symbol add_num_comp report_dummy allow_d_miss allow_cont_miss 
+  overall_pos print del;   
+ 
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
-  %let i_vars = %scan(&vars, &i, %str( ));
-  %if %sysevalf(&&&i_vars = ) %then %do;
-  %put ERROR: Macro parameter &i_vars not specified!;
+  %let i_var = %scan(&vars, &i, %str( ));
+  %if %sysevalf(&&&i_var = ) %then %do;
+  %put ERROR: Macro parameter "&i_var" not specified!;
   %goto end_of_macro;    
   %end;
 %end;
  
 /* Remove single and double quotes from macro parameters where they are not 
-supposed to be used, but might have been used anyway. */
-%let vars = var_list var_types group_var by_vars weight median_mean npct_pctn 
-            allow_d_miss allow_cont_miss total_group_last inc_num_stat_vars 
-            inc_report_dummy del;
+supposed to be used, but might have been used anyway, ie all macro parameters
+except for where */
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
-  %let i_vars = %scan(&vars, &i, %str( ));
-  %let &i_vars = %sysfunc(tranwrd(&&&i_vars, %nrstr(%"), %str( )));
-  %let &i_vars = %sysfunc(tranwrd(&&&i_vars, %nrstr(%'), %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %if (&i_var in where in_ds out_ds) = 0 %then %do;
+    %let &i_var = %sysfunc(tranwrd(&&&i_var, %nrstr(%"), %str( )));
+    %let &i_var = %sysfunc(tranwrd(&&&i_var, %nrstr(%'), %str( )));
+  %end;
 %end;
 
 /* Make sure all relevant macro parameters are in lowercase. */
-%let vars = var_list var_types group_var by_vars weight median_mean 
-            npct_pctn allow_d_miss allow_cont_miss total_group_last 
-            inc_num_stat_vars inc_report_dummy del;           
+%let vars =  
+  var_types var_stats stats_cont stats_d decimal_mark big_mark        
+  add_pct_symbol add_num_comp report_dummy allow_d_miss allow_cont_miss 
+  overall_pos print del;   
+
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
-  %let i_vars = %scan(&vars, &i, %str( ));
-  %let &i_vars = %lowcase(&&&i_vars);
+  %let i_var = %scan(&vars, &i, %str( ));
+  %let &i_var = %lowcase(&&&i_var);
 %end;
 
-/* Try to laod the first observation of the input dataset and use this 
-dataset for the following checks. This is done to avoid errors/warnings
-when the input dataset is given as a filepath, while at the same time 
-giving meaningful errors in the log, that results in the macro being 
-terminated. */
-data _pc_in_ds_tests;
+
+/*** in_ds checks ***/
+
+/* Load first observation of input dataset and use this dataset for the 
+following checks. This is done to avoid errors/warnings when the input dataset 
+is given as a filepath, while at the same time giving meaningful errors in the 
+log, that results in the macro being terminated. */
+data __pc_in_ds_obs;
   set &in_ds(obs = 1);
 run;
 
-/* Check that the specified input dataset exists and is not empty. */
-%if %sysfunc(exist(_pc_in_ds_tests)) = 0 %then %do;
-  %put ERROR: Input dataset: &in_ds does not exist!;
+/* Check input dataset exists. */
+%if %sysfunc(exist(__pc_in_ds_obs)) = 0 %then %do;
+  %put ERROR: Specified input dataset (in_ds = &in_ds) does not exist or is empty!;
   %goto end_of_macro;
 %end;
 
-%let ds_id = %sysfunc(open(_pc_in_ds_tests));
+/* Check input dataset is not empty. */
+%let ds_id = %sysfunc(open(__pc_in_ds_obs));
 %if  %sysfunc(attrn(&ds_id, nobs)) = 0 %then %do;
   %let rc = %sysfunc(close(&ds_id));
-  %put ERROR: Input dataset: &in_ds does not exist or is empty!;
+  %put ERROR: Input dataset (in_ds = &in_ds) does not exist or is empty!;
   %goto end_of_macro;
 %end;
 %let rc = %sysfunc(close(&ds_id));
 
-/* Check that the variables specified in var_list exists in the 
-input dataset, and that none of them is named "n". */
-%let ds_id = %sysfunc(open(_pc_in_ds_tests));
-%do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-  %let i_var_list = %scan(&var_list, &i, %str( ));
-  %if %sysfunc(nvalid(&i_var_list)) = 0 %then %do;
-    %let rc = %sysfunc(close(&ds_id));
-    %put ERROR: Variable "&i_var_list" specified in var_list;
-    %put ERROR: is not a valid SAS variable name!;
-    %goto end_of_macro;
-  %end;
-  %if %sysfunc(varnum(&ds_id, &i_var_list)) = 0 or &i_var_list = n %then %do;
-    %if &i_var_list = n %then %do;
-      %let rc = %sysfunc(close(&ds_id));
-      %put ERROR: Variables named "n" are not allowed in var_list!;
-    %end;
-    %else %if %sysfunc(varnum(&ds_id, &i_var_list)) = 0 %then %do;
-      %let rc = %sysfunc(close(&ds_id));
-      %put ERROR: Variable: &i_var_list specified in var_list;
-      %put ERROR: does not exist in the input dataset!;
-    %end;
-    %goto end_of_macro; 
-  %end;
-%end;
-%let rc = %sysfunc(close(&ds_id));
-
-/* Check that manually specified variable types are valid */
-%if &var_types ne auto %then %do;
-  %do i = 1 %to %sysfunc(countw(&var_types, %str( )));
-    %let i_var_types = %scan(&var_types, &i, %str( ));
-    %if %eval(&i_var_types in d cat cont) = 0 %then %do;
-      %put ERROR: Macro parameter var_types contains invalid value: &i_var_types;
-      %put ERROR: Valid values:;
-      %put ERROR: d (dichotomous);
-      %put ERROR: cat (categorical);
-      %put ERROR: cont (continuous);
-      %goto end_of_macro; 
-    %end;
-  %end;
-%end;
-
-/* If variable types have been specified manually, check that the number of 
-manually specified variable types, matches the number of variables in 
-var_list */
-%if &var_types ne auto %then %do;
-  %let var_list_n = %sysfunc(countw(&var_list, %str( )));
-  %let var_types_n = %sysfunc(countw(&var_types, %str( )));
-  %if %eval(&var_list_n ne &var_types_n) %then %do;
-    %put ERROR: Then number of specified variable types in var_types (&var_types_n);
-    %put ERROR: does not match the number of variables in var_list (&var_list_n)!;
-    %goto end_of_macro; 
-  %end;
-%end;
-
-/* Check that only one grouping variable is specified */
-%if %eval(%sysfunc(countw(&group_var, %str( ))) > 1) %then %do;
-  %put ERROR: Only one grouping variable can be specified in group_var!;
-  %goto end_of_macro; 
-%end;
-
-/* Check that the specified grouping variable exists in the input data */
-%if &group_var ne null %then %do;
-  %if %sysfunc(nvalid(&group_var)) = 0 %then %do;
-    %put ERROR: Group variable: &group_var specified in group_var;
-    %put ERROR: is not a valid SAS variable name!;
-    %goto end_of_macro;
-  %end;
-  %let ds_id = %sysfunc(open(&in_ds));
-  %if %sysfunc(varnum(&ds_id, &group_var)) = 0 %then %do;
-    %let rc = %sysfunc(close(&ds_id));
-    %put ERROR: The variable specified in group_var: &group_var does;
-    %put ERROR: not exist in the input dataset!;
-    %goto end_of_macro; 
-  %end;
-  %let rc = %sysfunc(close(&ds_id));
-%end;
-
-/* Check that the specified by-variables exists in the input dataset,
-and if multiple variables are given, make sure none of them is named
-"null". */
-%if &by_vars ne null %then %do;
-  %let ds_id = %sysfunc(open(&in_ds));
-  %do i = 1 %to %sysfunc(countw(&by_vars, %str( )));
-    %let i_by_vars = %scan(&by_vars, &i, %str( ));
-    %if %sysfunc(nvalid(&i_by_vars)) = 0 %then %do;
-      %let rc = %sysfunc(close(&ds_id));
-      %put ERROR: Variable: &i_by_vars specified in by_vars;
-      %put ERROR: is not a valid SAS variable name!;
-      %goto end_of_macro;
-    %end;
-    %if %sysfunc(varnum(&ds_id, &i_by_vars)) = 0 or &i_by_vars = null %then %do;
-      %if &i_by_vars = null %then %do;
-        %put ERROR: By-variables named "null" are not allowed!;
-      %end;      %else %if %sysfunc(varnum(&ds_id, &i_by_vars)) = 0 %then %do;
-        %put ERROR: By-variable "&i_by_vars" specified in by_vars does not exist!;
-      %end;
-      %let rc = %sysfunc(close(&ds_id));
-      %goto end_of_macro; 
-    %end;
-  %end;
-  %let rc = %sysfunc(close(&ds_id));
-%end;
-
-/* Check that only one numeric/character value is specified in the
-weight macro paramter */
-%else %if %eval(%sysfunc(countw(&weight, %str( ))) > 1 ) %then %do;
-  %put ERROR: Several numeric values/variables are specified in the;
-  %put ERROR: weight macro parameter! Only one numeric value or one;
-  %put ERROR: variable is allowed!;
-  %goto end_of_macro; 
-%end;
-
-/* If weight is not specified as a numeric value but as a variable name,
-check that the variable exists in the input dataset and that it is a
-numeric variable. */
-%if %datatyp(&weight) = CHAR %then %do;
-  %if %sysfunc(nvalid(&weight)) = 0 %then %do;
-    %put ERROR: Weight variable: &weight is not a valid SAS variable name!;
-    %goto end_of_macro;
-  %end;
-  %let ds_id = %sysfunc(open(&in_ds));
-  %if %sysfunc(varnum(&ds_id, &weight)) = 0 %then %do;
-    %let rc = %sysfunc(close(&ds_id));
-    %put ERROR: The specified weight variable (&weight);
-    %put ERROR: does not exist in the input dataset!;
-    %goto end_of_macro; 
-  %end;
-  %if %sysfunc(vartype(&ds_id, %sysfunc(varnum(&ds_id, &weight)))) = C %then %do;
-    %let rc = %sysfunc(close(&ds_id));
-    %put ERROR: The specified weight variable (&weight);
-    %put ERROR: is not numeric!;
-    %goto end_of_macro; 
-  %end;
-  %let rc = %sysfunc(close(&ds_id));
-%end;
-
 /* Check that none of the specified variables has a "__" prefix. Note
-that "dummy_var" has been included in %qsubstr call so that
-variables with a name of length one can be handled. */
-%let vars = var_list group_var by_vars weight;
+that "dummy_var" has been included in %qsubstr call so that the scenario
+of one variable with a very short name can be handles correctly. */
+%let vars = var_list strata by weight;
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
-  %let i_vars = %scan(&vars, &i, %str( ));
-  %do j = 1 %to %sysfunc(countw(&&&i_vars, %str( )));
-    %let j_var = %scan(&&&i_vars, &j, %str( ));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %do j = 1 %to %sysfunc(countw(&&&i_var, %str( )));
+    %let j_var = %scan(&&&i_var, &j, %str( ));
     %if %eval(%qsubstr(&j_var dummy_var, 1, 2) = __) %then %do;
-      %put ERROR: &i_vars contains a variable with a "__" prefix (&&&i_vars);
+      %put ERROR: "&i_var" contains variable "&j_var" with a "__" prefix:;
       %put ERROR: This is not allowed to make sure that input variables are not;
       %put ERROR: overwritten by temporary variables created by the macro!;
       %goto end_of_macro; 
@@ -372,330 +257,612 @@ variables with a name of length one can be handled. */
   %end;
 %end; /* End of i-loop */
 
-/* Check that cont_cutoff is specified as a positive integer.
-Regular expression: Starts with a number 1-9, followed by, and ends with,
-one or more digits (so that eg. 0 is not allowed, but 10 is)*/
-%if %sysfunc(prxmatch('^[1-9]\d*$', &cont_cutoff)) = 0 %then %do;
-  %put ERROR: cont_cutoff must be a positive integer!;
-  %goto end_of_macro; 
+
+/*** "var_list" checks ***/
+
+/* Check variables specified in var_list exists in input dataset. */
+%let ds_id = %sysfunc(open(__pc_in_ds_obs));
+%do i = 1 %to %sysfunc(countw(&var_list, %str( )));
+  %let i_var = %scan(&var_list, &i, %str( ));
+  %if %sysfunc(nvalid(&i_var)) = 0 %then %do;
+    %let rc = %sysfunc(close(&ds_id));
+    %put ERROR: Variable name "&i_var" specified in;
+    %put ERROR: var_list = &var_list;
+    %put ERROR: is not a valid SAS variable name!;
+    %goto end_of_macro;
+  %end;
+  %if %sysfunc(varnum(&ds_id, &i_var)) = 0 %then %do;
+    %let rc = %sysfunc(close(&ds_id));
+    %put ERROR: Variable "&i_var" specified in;
+    %put ERROR: var_list = &var_list;
+    %put ERROR: does not exist in the input dataset "in_ds = &in_ds"!;
+    %goto end_of_macro; 
+  %end;
+%end;
+%let rc = %sysfunc(close(&ds_id));
+
+/* Check that there are no duplicates in "var_list" */
+%do i = 1 %to %sysfunc(countw(&var_list, %str( )));
+  %let i_var = %scan(&var_list, &i, %str( ));
+  %let cnt = 0;
+  %do j = 1 %to %sysfunc(countw(&var_list, %str( )));
+    %if &i_var = %scan(&var_list, &j, %str( )) 
+      %then %let cnt = %eval(&cnt + 1);
+  %end;
+  %if %sysevalf(&cnt > 1) %then %do;
+    %put ERROR: Variable "&i_var" is included multiple times in;
+    %put ERROR: var_list = &var_list!;
+    %goto end_of_macro;
+  %end;
 %end;
 
-/* Check that median_mean takes either the value "median" or the value "mean". */
-%if %eval(&median_mean in median mean) = 0  %then %do;
-  %put ERROR: The median_mean parameter must be speficied as either;
-  %put ERROR: median_mean = median or median_mean = mean.;
-  %goto end_of_macro; 
+/*** "by" checks ***/
+
+/* Check by variables have valid names and exists in input dataset */
+%if %lowcase(&by) ne null %then %do;
+  %let ds_id = %sysfunc(open(&in_ds));
+  %do i = 1 %to %sysfunc(countw(&by, %str( )));
+    %let i_var = %scan(&by, &i, %str( ));
+    %if %sysfunc(nvalid(&i_var)) = 0 %then %do;
+      %let rc = %sysfunc(close(&ds_id));
+      %put ERROR: Variable name "&i_var" specified in "by = &by";
+      %put ERROR: is not a valid SAS variable name!;
+      %goto end_of_macro;
+    %end;
+    %if %sysfunc(varnum(&ds_id, &i_var)) = 0 %then %do;
+      %put ERROR: Variable "&i_var" specified in "by = &by" does not exist!;
+      %let rc = %sysfunc(close(&ds_id));
+      %goto end_of_macro; 
+    %end;
+  %end;
+  %let rc = %sysfunc(close(&ds_id));
 %end;
 
-/* Check that npct_pctn takes either the value "npct" or the value "pctn". */
-%if %eval(&npct_pctn in npct pctn) = 0 %then %do;
-  %put ERROR: The npct_pctn parameter must be speficied as either;
-  %put ERROR: "npct" or "pctn";
-  %goto end_of_macro; 
+/* Check that there are no duplicates in by */
+%do i = 1 %to %sysfunc(countw(&by, %str( )));
+  %let i_var = %scan(&by, &i, %str( ));
+  %let cnt = 0;
+  %do j = 1 %to %sysfunc(countw(&by, %str( )));
+    %if &i_var = %scan(&by, &j, %str( )) 
+      %then %let cnt = %eval(&cnt + 1);
+  %end;
+  %if %sysevalf(&cnt > 1) %then %do;
+    %put ERROR: Variable "&i_var" is included multiple times in "by = &by"!;
+    %goto end_of_macro;
+  %end;
 %end;
 
-/* Check that the parameters specifying how many decimals to display in the
-output if corrrectly specified as a non-negative integer */
-%if %sysfunc(prxmatch('^\d+$', &dec_n)) = 0 %then %do;
-  %put ERROR: dec_n must be a non-negative integer!;
-  %goto end_of_macro; 
-%end;
-%if %sysfunc(prxmatch('^\d+$', &dec_d_cat)) = 0 %then %do;
-  %put ERROR: dec_d_cat must be a non-negative integer!;
-  %goto end_of_macro; 
-%end;
-%if %sysfunc(prxmatch('^\d+$', &dec_cont)) = 0 %then %do;
-  %put ERROR: dec_cont must be a non-negative integer!;
-  %goto end_of_macro; 
-%end;
-%if %sysfunc(prxmatch('^\d+$', &dec_pct)) = 0 %then %do;
-  %put ERROR: dec_pct must be a non-negative integer!;
-  %goto end_of_macro; 
-%end;
-
-/* Check that sep_dec and sep_digit is specified correctly as "remove" or 
-on the form: starts with a double-quote, followed by one or more 
-symbols(none of which are the symbols "¤" or "@", and ends in double-quote. */
-%if %eval(&sep_dec ne remove and %sysfunc(prxmatch('^["][^¤@]*["]$|^remove$', &sep_dec)) = 0) %then %do;
-  %put ERROR: sep_dec does not have a valid value!;
-  %goto end_of_macro;  
-%end;
-
-%if %sysfunc(prxmatch('^["][^¤@]*["]$|^remove$', &sep_digit)) = 0 %then %do;
-  %put ERROR: sep_digit does not have a valid value!;
-  %goto end_of_macro;  
-%end;
-
-/* Check that y/n macro parameters are specified correctly */
-%let vars = allow_d_miss allow_cont_miss total_group_last
-            inc_num_stat_vars inc_report_dummy del;
-%do i = 1 %to %sysfunc(countw(&vars, %str( )));
-  %let i_vars = %scan(&vars, &i, %str( ));
-  %if %eval(&&&i_vars in n y) = 0 %then %do;
-    %put ERROR: &i_vars must be specified as  &i_vars = n (no) or &i_vars = y (yes)!;
+/* Make sure "strata" variable is not included in "by". This would not be 
+possible since the macro would try to produce an output dataset with multiple 
+columns with the same name. */
+%if %lowcase(&strata) ne null %then %do;
+  %if &strata in &by %then %do;
+    %put ERROR: The specified variable "strata = &strata";
+    %put ERROR: is also included in "by = &by";
+    %put ERROR: This is not allowed!;
     %goto end_of_macro;
   %end;
 %end;
 
 
-/*******************************************************************************	
+/*** "strata" checks ***/
+
+/* Check only one variable in "strata". */
+%if %eval(%sysfunc(countw(&strata, %str( ))) > 1) %then %do;
+  %put ERROR: Only one variable can be specified in "strata = &strata"!;
+  %goto end_of_macro; 
+%end;
+
+/* Check "strata" variable exists in input data. */
+%if %lowcase(&strata) ne null %then %do;
+  %if %sysfunc(nvalid(&strata)) = 0 %then %do;
+    %put ERROR: Variable name specified in "strata = &strata";
+    %put ERROR: is not a valid SAS variable name!;
+    %goto end_of_macro;
+  %end;
+  %let ds_id = %sysfunc(open(&in_ds));
+  %if %sysfunc(varnum(&ds_id, &strata)) = 0 %then %do;
+    %let rc = %sysfunc(close(&ds_id));
+    %put ERROR: Variable specified in "strata = &strata" does;
+    %put ERROR: not exist in the input dataset "in_ds = &in_ds"!;
+    %goto end_of_macro; 
+  %end;
+  %let rc = %sysfunc(close(&ds_id));
+%end;
+
+
+/*** "var_types" checks ***/
+
+/* Check manually specified variable types are valid */
+%if &var_types ne auto %then %do;
+  %do i = 1 %to %sysfunc(countw(&var_types, %str( )));
+    %let i_var = %scan(&var_types, &i, %str( ));
+    %if %eval(&i_var in d cat cont) = 0 %then %do;
+      %put ERROR: "var_types = &var_types";
+      %put ERROR: contains invalid value "&i_var";
+      %goto end_of_macro; 
+    %end;
+  %end;
+%end;
+
+/* If variable types have been specified manually, check that the number of 
+manually specified variable types matches the number of variables in 
+"var_list". */
+%if &var_types ne auto %then %do;
+  %if %sysfunc(countw(&var_types, %str( ))) ne 
+      %sysfunc(countw(&var_list, %str( ))) %then %do;
+    %put ERROR: Then number of variables in "var_types" (%sysfunc(countw(&var_types, %str( ))));
+    %put ERROR: does not match the number of variables in "var_list" (%sysfunc(countw(&var_list, %str( ))))!;
+    %goto end_of_macro; 
+  %end;
+%end;
+
+
+/*** "var_stats" checks ***/
+
+/* Check manually specified variable types are valid. */
+%if &var_stats ne auto %then %do;
+  %do i = 1 %to %sysfunc(countw(&var_stats, %str( )));
+    %let i_var = %scan(&var_stats, &i, %str( ));
+    %if %eval(&i_var in n_pct pct_n median_q1q3 mean_stderr) = 0 %then %do;
+      %put ERROR: "var_stats = &var_stats";
+      %put ERROR: contains invalid value "&i_var";
+      %goto end_of_macro; 
+    %end;
+  %end;
+%end;
+
+/* If variable statistics have been specified manually, check that the number
+of manually specified variable statistics matches the number of variables in 
+"var_list". */
+%if &var_stats ne auto %then %do;
+  %if %sysfunc(countw(&var_stats, %str( ))) ne 
+      %sysfunc(countw(&var_list, %str( ))) %then %do;
+    %put ERROR: Then number of variables in "var_stats" (%sysfunc(countw(&var_stats, %str( ))));
+    %put ERROR: does not match the number of variables in "var_list" (%sysfunc(countw(&var_list, %str( ))))!;
+    %goto end_of_macro; 
+  %end;
+%end;
+
+
+/*** "stats_cont" checks ***/
+
+/* Check that "stats_cont" has a valid value. */
+%if %eval(&stats_cont in median_q1q3 mean_stderr) = 0  %then %do;
+  %put ERROR: "stats_cont" has invalid value  "&stats_cont";
+  %goto end_of_macro; 
+%end;
+
+
+/*** "stats_d" checks ***/
+
+/* Check that "stats_d" has a valid value. */
+%if %eval(&stats_d in n_pct pct_n) = 0  %then %do;
+  %put ERROR: "stats_d" has invalid value  "&stats_d";
+  %goto end_of_macro; 
+%end;
+
+
+/*** "weight" checks ***/
+
+/* Check only one variable specified in "weight". */
+%if %eval(%sysfunc(countw(&weight, %str( ))) > 1) %then %do;
+  %put ERROR: Only one variable can be specified in "weight = &weight"!;
+  %goto end_of_macro; 
+%end;
+
+/* Check "weight" variable exists in input data. */
+%if %lowcase(&weight) ne null %then %do;
+  %if %sysfunc(nvalid(&weight)) = 0 %then %do;
+    %put ERROR: Variable name specified in "weight = &weight";
+    %put ERROR: is not a valid SAS variable name!;
+    %goto end_of_macro;
+  %end;
+  %let ds_id = %sysfunc(open(&in_ds));
+  %if %sysfunc(varnum(&ds_id, &weight)) = 0 %then %do;
+    %let rc = %sysfunc(close(&ds_id));
+    %put ERROR: Variable specified in "weight = &weight" does;
+    %put ERROR: not exist in the input dataset "in_ds = &in_ds"!;
+    %goto end_of_macro; 
+  %end;
+  %let rc = %sysfunc(close(&ds_id));
+%end;
+
+/* Check that if a "weight" variable is specifed, that the variable
+is numeric. */
+%if %lowcase(&weight) ne null %then %do;
+  data _null_;
+    set __pc_in_ds_obs;
+    call symput("weight_vt", vtype(&weight));  
+  run;
+
+  %if &weight_vt ne N %then %do;
+    %put ERROR: The variable specified in "weight = &weight" is not numeric!;
+    %goto end_of_macro;
+  %end;
+%end;
+
+/*** "cat_groups_max" checks ***/
+
+/* Check that "cat_groups_max" is specified as a positive integer.
+Regular expression: Starts with a number 1-9, followed by, and ends with,
+one or more digits (so that eg. 0 is not allowed, but 10 is)*/
+%if %sysfunc(prxmatch('^[1-9]\d*$', &cat_groups_max)) = 0 %then %do;
+  %put ERROR: "cat_groups_max" must be a positive integer!;
+  %goto end_of_macro; 
+%end;
+
+
+/*** "decimals_d", "decimals_cont", and "decimals_pct" checks ***/
+
+/* Check that the parameters specifying how many decimals to display are
+corrrectly given as non-negative integers */
+%if %sysfunc(prxmatch('^\d+$', &decimals_d)) = 0 %then %do;
+  %put ERROR: "decimals_d" must be a non-negative integer!;
+  %goto end_of_macro; 
+%end;
+%if %sysfunc(prxmatch('^\d+$', &decimals_cont)) = 0 %then %do;
+  %put ERROR: "decimals_cont" must be a non-negative integer!;
+  %goto end_of_macro; 
+%end;
+%if %sysfunc(prxmatch('^\d+$', &decimals_pct)) = 0 %then %do;
+  %put ERROR: "decimals_pct" must be a non-negative integer!;
+  %goto end_of_macro; 
+%end;
+
+
+/*** "decimal_mark" and "big_mark" checks ***/
+
+/* Check that "decimal_mark" and "big_mark" has valid values. */
+%if ^(&decimal_mark in point comma space) %then %do;
+  %put ERROR: "decimal_mark" does not have a valid value!;
+  %goto end_of_macro;  
+%end;
+%if ^(&big_mark in point comma space remove) %then %do;
+  %put ERROR: "big_mark" does not have a valid value!;
+  %goto end_of_macro;  
+%end;
+
+
+/*** "overall_pos" checks ***/
+
+/* Check that "overall_pos" has a valid value. */
+%if %eval(&overall_pos in first last) = 0 %then %do;
+  %put ERROR: "overall_pos" does not have a valid value!;
+  %goto end_of_macro; 
+%end;
+
+
+/*** "add_pct_symbol", "add_num_comp", "report_dummy", "allow_d_miss",    
+"allow_cont_miss", "print", and "del"  checks ***/
+
+/* Check that y/n macro parameters are specified correctly */
+%let vars = 
+  add_pct_symbol add_num_comp report_dummy allow_d_miss   
+  allow_cont_miss print del;            
+
+%do i = 1 %to %sysfunc(countw(&vars, %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %if %eval(&&&i_var in n y) = 0 %then %do;
+    %put ERROR: "&i_var" does not have a valid value!;
+    %goto end_of_macro;
+  %end;
+%end;
+
+
+/*******************************************************************************
+LOAD AND RESTRICT INPUT DATA
+*******************************************************************************/
+%local strata_nmiss weight_nmiss weight_min;
+
+data __pc_data1;
+  set &in_ds;
+  where &where;;
+run;
+
+%if &syserr ne 0 %then %do;
+  %put ERROR- The specified "where" condition:;
+  %put ERROR- "where = &where";
+  %put ERROR- produced a warning or an error. Macro terminated!;
+  %goto end_of_macro; 
+%end;
+
+/* Check that the specified "strata" and "weight" variable does not contain 
+missing values / empty strings, and that "weight" does not contain negative 
+number . */
+%if %sysevalf(%lowcase(&strata) ne null or %lowcase(&weight) ne null) %then %do;
+  proc sql noprint;
+    select  %if %lowcase(&strata) ne null %then %do; nmiss(&strata) %end;
+            %if %lowcase(&weight) ne null %then %do;
+            nmiss(&weight), 
+            min(&weight)
+            %end;
+      into  %if %lowcase(&strata) ne null %then %do; :strata_nmiss %end;
+            %if %lowcase(&weight) ne null %then %do;
+            :weight_nmiss, 
+            :weight_min
+            %end;
+      from __pc_data1(keep = 
+        %if %lowcase(&strata) ne null %then %do; &strata %end;
+        %if %lowcase(&weight) ne null %then %do; &weight %end;
+        );
+  quit;
+
+  %if  &strata_nmiss > 0 %then %do;
+    %put ERROR: The specified "strata" variable "&strata" contains missing values / empty strings!;
+    %goto end_of_macro;
+  %end;
+  %if %lowcase(&weight) ne null %then %do;
+    %if  &weight_nmiss > 0 %then %do;
+      %put ERROR: The specified "weight" variable "&weight" contains missing values!;
+      %goto end_of_macro;
+    %end;
+    %if %sysevalf(&weight_min < 0) %then %do;
+      %put ERROR: The specified "weight" variable "&weight" contains one or more negative weights!;
+      %goto end_of_macro;      
+    %end;
+  %end;
+%end;
+
+/*******************************************************************************
 RENAME VARIABLES
 *******************************************************************************/
+%local i var_list_input by_input i_var;
+
 /* To ensure that long variable names can be handled, we rename all variables
-specified in the var_list group_var and by_vars macro parameters. If no
-group_var and/or by_vars are given, we created dummy variables to facilitate
-the analyses. The original input is saved so that the variable names can be
-supstituted back into the output table. */
-%let var_list_ori = &var_list;
-%let group_var_ori = &group_var;
-%let by_vars_ori = &by_vars;
+specified in the macro parameters. If no strata and/or by variables are given, 
+we created dummy variables to facilitate the analyses. The original variable
+names are substituted back into the output table later on. */
 
+/* Save the input values of macro parameters. */
+%let var_list_input = &var_list;
+%let by_input = &by;
+
+/* Replace with the new variables that are going to be created. */
 %let var_list = ;
-%let group_var = __group_var;
-%let by_vars = ;
-
-%do i = 1 %to %sysfunc(countw(&var_list_ori, %str( )));
+%do i = 1 %to %sysfunc(countw(&var_list_input, %str( )));
   %let var_list = &var_list __var_&i;
 %end;
-%do i = 1 %to %sysfunc(countw(&by_vars_ori, %str( )));
-  %let by_vars = &by_vars __by_var_&i;
+
+%let by = ;
+%do i = 1 %to %sysfunc(countw(&by_input, %str( )));
+  %let by = &by __by_&i;
 %end;
 
-data _pc_data1(keep = __:);
-	set &in_ds;
-  /* Rename var_list variables. */
-  %do i = 1 %to %sysfunc(countw(&var_list_ori, %str( )));
-    %let i_var_list_ori = %scan(&var_list_ori, &i, %str( ));
-    rename &i_var_list_ori = __var_&i;
+data __pc_data2(keep = __:);
+set  __pc_data1;
+  /* Rename "var_list" variables. */
+  %do i = 1 %to %sysfunc(countw(&var_list_input, %str( )));
+    %let i_var = %scan(&var_list_input, &i, %str( ));
+    rename &i_var = __var_&i;
   %end;
-  /* Rename or create group variable. */
-  %if &group_var_ori ne null %then %do;
-    rename &group_var_ori = __group_var;
+  /* Create/rename new "strata" variable. */
+  %if %lowcase(&strata) ne null %then %do;
+    rename &strata = __strata;
   %end;
   %else %do;
-    __group_var = "dummy";
+    __strata = "null";
   %end;
-  /* Create weight variable */
-  	__w = &weight;
-  /* dummy variable used when summarizing the data. */
-  __dummy = 1;
-  /* Rename or create by_vars */
-  %if &by_vars_ori ne null %then %do;
-    %do i = 1 %to %sysfunc(countw(&by_vars_ori, %str( )));
-      %let i_by_vars_ori = %scan(&by_vars_ori, &i, %str( ));
-      rename &i_by_vars_ori = __by_var_&i;
+  /* Create/rename "weight" variable */
+  %if %lowcase(&weight) ne null %then %do;
+    rename &weight = __w;
+  %end;
+  %else %do;
+    __w = 1;
+  %end;
+  /* Add __n variable to data */
+  __n = 1;
+  /* Rename/create "by" variables */
+  %if %lowcase(&by_input) ne null %then %do;
+    %do i = 1 %to %sysfunc(countw(&by_input, %str( )));
+      %let i_var = %scan(&by_input, &i, %str( ));
+      __by_&i = &i_var;
     %end;
   %end;
   %else %do;
-    __by_var_1 = "dummy";
+    __by_1 = "null";
   %end;
 run;
-/*%put var_list_ori: &var_list_ori;*/
-/*%put var_list: &var_list;*/
-/*%put group_var_ori: &group_var_ori;*/
-/*%put group_var: &group_var;*/
-/*%put by_vars_ori: &by_vars_ori;*/
-/*%put by_vars: &by_vars;*/
 
-
-/*******************************************************************************	
-INPUT DATA CHECKS
-*******************************************************************************/
-
-/* Check that the specified grouping variable does not contain 
-missing values / empty strings */
-proc sql noprint;
-  select nmiss(__group_var) into: group_var_nmiss
-    from _pc_data1(keep = __group_var);
-quit;
-
-%if  &group_var_nmiss > 0 %then %do;
-  %put ERROR: The specified group_var variable contains missing;
-  %put ERROR: values / empty strings!;
-  %goto end_of_macro;
+%if &print = y %then %do;
+  %put WARNING- "var_list" input:;
+  %put var_list_input: &var_list_input;
+  %put WARNING- "var_list" after renaming variables:;
+  %put var_list: &var_list;
+  %put WARNING- "by" input:;
+  %put by_input: &by_input;
+  %put WARNING- "by" after renaming variables:;
+  %put by: &by;
 %end;
 
 
 /******************************************************************************
 FIND VARIABLE INFO
 ******************************************************************************/
+%local i i_var i_type i_stat;
 
+/*** Find information on the variables specified in "var_list". ***/
 proc sql;
-  create table _pc_info1 as
+  create table __pc_info1 as
     select
       %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-        %let i_var_list = %scan(&var_list, &i, %str( ));
-        count(distinct(&i_var_list)) as &i_var_list._nvalues,
-        nmiss(&i_var_list) as &i_var_list._nmiss,
-        min(&i_var_list) as &i_var_list._min,
-        max(&i_var_list) as &i_var_list._max,
+        %let i_var = %scan(&var_list, &i, %str( ));
+        count(distinct(&i_var)) as &i_var._nvalues,
+        nmiss(&i_var) as &i_var._nmiss,
+        min(&i_var) as &i_var._min,
+        max(&i_var) as &i_var._max,
       %end;
-      min(__w) as __w_min,
       1 as __merge
-      from _pc_data1;		
+      from __pc_data2;
 quit;
 
-data _pc_info2;
-set _pc_data1(obs = 1);
+data __pc_info2;
+set __pc_data2(obs = 1);
   %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-    %let i_var_list = %scan(&var_list, &i, %str( ));
-    &i_var_list._vt = vtype(&i_var_list);
-    keep &i_var_list._vt;
+    %let i_var = %scan(&var_list, &i, %str( ));
+    &i_var._vt = vtype(&i_var);
+    keep &i_var._vt;
   %end;
   __merge = 1;
   keep __merge;
 run;
 
-data _pc_info3; 
-  merge _pc_info1 _pc_info2;
+data __pc_info3; 
+  merge __pc_info1 __pc_info2;
   by __merge;
 run;
 
-/* If any observation has a negative weight, we terminate the macro
-with an error. */
-proc sql noprint;
-  select __w_min into :w_min
-    from _pc_info3;
-quit;
-
-%if %sysevalf(&w_min < 0) %then %do;
-  %put ERROR: One or more observations have a negative weight!;
-  %goto end_of_macro;      
-%end;
-
-/******************************************************************************
-DETERMINE VARIABLE TYPES
-******************************************************************************/
-
-data _pc_info4; 
-  set _pc_info3;
+/*** Determine variable types ***/
+data __pc_info4; 
+  set __pc_info3;
   %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-    %let i_var_list = %scan(&var_list, &i, %str( ));
-    format &i_var_list._type $4.;
+    %let i_var = %scan(&var_list, &i, %str( ));
+    format &i_var._type $4.;
     /*** Automatic ***/
     %if &var_types = auto %then %do;
       /* If the variable is character, we will assume it is a categorical
       variable. */
-      if &i_var_list._vt = "C" then &i_var_list._type = "cat";
+      if &i_var._vt = "C" then &i_var._type = "cat";
       /* Else, if the variable takes numeric values: */
       else do;
         /* If the variable only takes the values zero and/or one (besides 
         missing values) then we will assume it's dichotomous. */
-        if 1 <= &i_var_list._nvalues <= 2 and cats(&i_var_list._min) in ("0" "1") 
-          and cats(&i_var_list._max) in ("0" "1") then &i_var_list._type = "d";  
-        /* Else, if the variable takes fewer distinct values than
-        specified in &cont_cufoff then we will assume that the variable
-        is categorical. */
-        else if &i_var_list._nvalues < &cont_cutoff 
-          then &i_var_list._type = "cat"; 
+        if 1 <= &i_var._nvalues <= 2 and cats(&i_var._min) in ("0" "1") 
+          and cats(&i_var._max) in ("0" "1") then &i_var._type = "d";  
+        /* Else, if the number of distinct values of the variable is less than 
+        or equal to what is specified in &cat_groups_max, then we will assume 
+        that the variable is categorical. */
+        else if &i_var._nvalues <= &cat_groups_max
+          then &i_var._type = "cat"; 
         /* Else we assume the variable is continuous. */
-        else &i_var_list._type = "cont";
+        else &i_var._type = "cont";
       end;
     %end;
     /*** Manual ***/
     %else %do;
-      %let i_var_types = %scan(&var_types, &i, %str( ));
-      &i_var_list._type = "&i_var_types";
+      %let i_type = %scan(&var_types, &i, %str( ));
+      &i_var._type = "&i_type";
     %end;
 
     /* Correction of nvalues if there are categorical variables
-    with missing values. */
-    if &i_var_list._type = "cat" and &i_var_list._nmiss > 0 
-        then &i_var_list._nvalues = &i_var_list._nvalues + 1; 
+    with empty string values. */
+    if &i_var._type = "cat" and &i_var._nmiss > 0 
+        then &i_var._nvalues = &i_var._nvalues + 1; 
   %end;
 run;
 
-/*%put var_types before auto determine: &var_types;*/
+%if &print = y %then %do;
+  %put WARNING- "var_types" before auto determine:;
+  %put var_types: &var_types;
+%end;
 
-/* If &var_types = auto we update the macro variable to include
+/* If "var_types = auto" we update the macro variable to include
 the automatically determined variable types. */
 %if &var_types = auto %then %do;
   %let var_types = ;
   %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-    %let i_var_list = %scan(&var_list, &i, %str( ));
+    %let i_var = %scan(&var_list, &i, %str( ));
     proc sql noprint;
-      select &i_var_list._type into :i_var_types
-        from _pc_info4;
+      select &i_var._type into :i_type
+        from __pc_info4;
     quit;
-    %let var_types = &var_types &i_var_types;
+    %let var_types = &var_types &i_type;
   %end;
 %end;
 
-/*%put var_types after auto determine: &var_types;*/
+%if &print = y %then %do;
+  %put WARNING- "var_types" after auto determine:;
+  %put var_types: &var_types;
+%end;
+
+/*** Determine variable statistics ***/
+data __pc_info5; 
+  set __pc_info4;
+  %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
+    %let i_var = %scan(&var_list, &i, %str( ));
+    format &i_var._stat $20.;
+    /*** Automatic ***/
+    %if &var_stats = auto %then %do;
+      if &i_var._type = "cont" then &i_var._stat = "&stats_cont";
+      else if &i_var._type in ("d" "cat") 
+        then &i_var._stat = "&stats_d";
+    %end;
+    /*** Manual ***/
+    %else %do;
+      %let i_stat = %scan(&var_stats, &i, %str( ));
+      &i_var._stat = "&i_stat";
+    %end; 
+  %end;
+run;
+
+%if &print = y %then %do;
+  %put WARNING- "var_stats" before auto determine:;
+  %put var_stats: &var_stats;
+%end;
+
+/* If "var_stats = auto" we update the macro variable to include
+the automatically determined variable statistics. */
+%if &var_stats = auto %then %do;
+  %let var_stats = ;
+  %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
+    %let i_var = %scan(&var_list, &i, %str( ));
+    proc sql noprint;
+      select &i_var._stat into :i_stat
+        from __pc_info5;
+    quit;
+    %let var_stats = &var_stats &i_stat;
+  %end;
+%end;
+
+
+%if &print = y %then %do;
+  %put WARNING- "var_stats" after auto determine:;
+  %put var_stats: &var_stats;
+%end;
+
 
 /******************************************************************************
-FURTHER CHECKS AFTER VARIABLE TYPES DETERMINED
+FURTHER CHECKS 
 ******************************************************************************/
+%local i i_var i_var_input i_type i_vt i_nvalues i_min i_max i_var_nmiss i_stat;
 
-/* Depending on the values of &allow_d_miss and &allow_cont_miss, 
-terminate the macro with an error if any of the dichotomous and/or 
-continuous variables have missing values. */
+/* Check that the variable types are compatible with the variable data */
 %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-  %let i_var_list = %scan(&var_list, &i, %str( ));
-  %let i_var_list_ori = %scan(&var_list_ori, &i, %str( ));
-  %let i_var_types = %scan(&var_types, &i, %str( ));
-  data _null_;
-    set _pc_info4;
-    call symput("i_var_nmiss", put(&i_var_list._nmiss, 20.));
-  run;
-
-  %if &allow_d_miss = n and &i_var_types = d and %eval(&i_var_nmiss > 0) %then %do;
-    %put ERROR: Dichotomous variable "&i_var_list_ori" contains one or more missing values!;
-    %put ERROR: Use allow_d_miss = y if missing values in dichotomous variables are to be allowed.;
-    %put ERROR: Note that if missing values are allowed, that the missing observations are still;
-    %put ERROR: counted in the denominator when calculating percentages!;
-    %goto end_of_macro;    
-  %end;
-  %if &allow_cont_miss = n and &i_var_types = cont and %eval(&i_var_nmiss > 0) %then %do;
-    %put ERROR: Continuous variable "&i_var_list_ori" contains one or more missing values!;
-    %put ERROR: Use allow_cont_miss = y if missing values in continuous variables are to be allowed.;
-    %goto end_of_macro;    
-  %end;
-%end; /* End of i-loop */
-
-/* Check that the variable types are compatible with the variables */
-%do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-  %let i_var_list = %scan(&var_list, &i, %str( ));
-  %let i_var_list_ori = %scan(&var_list_ori, &i, %str( ));
-  %let i_var_types = %scan(&var_types, &i, %str( ));
+  %let i_var = %scan(&var_list, &i, %str( ));
+  %let i_var_input = %scan(&var_list_input, &i, %str( ));
+  %let i_type = %scan(&var_types, &i, %str( ));
   proc sql noprint;
-    select  &i_var_list._vt, 
-            &i_var_list._nvalues,
-            &i_var_list._min, 
-            &i_var_list._max 
+    select  &i_var._vt, 
+            &i_var._nvalues,
+            &i_var._min, 
+            &i_var._max 
     into    :i_vt,
             :i_nvalues,
             :i_min,
             :i_max
-    from _pc_info4;
+    from __pc_info5;
   quit;
 
   /* Dichotomous: variable needs to be numeric and only take
-  zero and/or one values (besides missing values) */
-  %if &i_var_types = d %then %do;
-    %if %eval(&i_vt ne N or %sysfunc(prxmatch("^1$|^2$", &i_nvalues)) = 0
-        or %sysfunc(prxmatch("^0$|^1$", &i_min)) = 0
-        or %sysfunc(prxmatch("^0$|^1$", &i_max)) = 0) %then %do;
-      %put ERROR: The var_list variable "&i_var_list_ori" is specified to be a;
+  zero and/or one values */
+  %if &i_type = d %then %do;
+    %if %eval(
+        &i_vt ne N or
+        %sysfunc(prxmatch("^1$|^2$", &i_nvalues)) = 0 or
+        %sysfunc(prxmatch("^0$|^1$", &i_min)) = 0 or
+        %sysfunc(prxmatch("^0$|^1$", &i_max)) = 0
+      ) %then %do;
+      %put ERROR: The "var_list" variable "&i_var_input" is specified to be a;
       %put ERROR: dichotomous variable but does not fullfill the requirements;
       %put ERROR: of being a numeric variable with zero and/or one values.;
       %goto end_of_macro;    
     %end;
   %end;
-  /* Categorical: variable must have fewer than &cont_cutoff 
-  distinct values. */
-  %if &i_var_types = cat %then %do;
-    %if &i_nvalues ge &cont_cutoff %then %do;
-      %put ERROR: The var_list variable "&i_var_list_ori" is specified to be a;
-      %put ERROR: categorical variable but does not fullfill the requirements;
-      %put ERROR: of having fewer than &cont_cutoff (cont_cutoff) distrinct values;
-      %goto end_of_macro;        
-    %end;
-  %end;
+  /* Categorical: No checks needed. */
   /* Continuous: variable must be numeric. */
-  %if &i_var_types = cont %then %do;
+  %if &i_type = cont %then %do;
     %if &i_vt ne N %then %do;
-      %put ERROR: The var_list variable "&i_var_list_ori" is specified to be a;
+      %put ERROR: The "var_list" variable "&i_var_input" is specified to be a;
       %put ERROR: continuous variable but does not fullfill the requirements;
       %put ERROR: of being a numerical variable.;
       %goto end_of_macro;        
@@ -703,324 +870,469 @@ continuous variables have missing values. */
   %end;
 %end;
 
+/* Depending on the values of "allow_d_miss" and "allow_cont_miss", 
+terminate the macro with an error if any of the dichotomous and/or 
+continuous variables have missing values. */
+%do i = 1 %to %sysfunc(countw(&var_list, %str( )));
+  %let i_var = %scan(&var_list, &i, %str( ));
+  %let i_var_input = %scan(&var_list_input, &i, %str( ));
+  %let i_type = %scan(&var_types, &i, %str( ));
+  data _null_;
+    set __pc_info4;
+    call symput("i_var_nmiss", put(&i_var._nmiss, 20.));
+  run;
+
+  %if %sysevalf(&allow_d_miss = n and &i_type = d and &i_var_nmiss > 0) %then %do;
+    %put ERROR: Dichotomous variable "&i_var_input" in;
+    %put ERROR: "var_list = &var_list_input";
+    %put ERROR: contains one or more missing values!;
+    %goto end_of_macro;    
+  %end;
+  %if %sysevalf(&allow_cont_miss = n and &i_type = cont and &i_var_nmiss > 0) %then %do;
+    %put ERROR: Continuous variable "&i_var_input" in;
+    %put ERROR: "var_list = &var_list_input";
+    %put ERROR: contains one or more missing values!;
+    %goto end_of_macro;    
+  %end;
+%end; /* End of i-loop */
+
+/* Check that the variable statistics are compatible with the variable
+types */
+%do i = 1 %to %sysfunc(countw(&var_list, %str( )));
+  %let i_var = %scan(&var_list, &i, %str( ));
+  %let i_var_input = %scan(&var_list_input, &i, %str( ));
+  %let i_type = %scan(&var_types, &i, %str( ));
+  %let i_stat = %scan(&var_stats, &i, %str( ));
+  proc sql noprint;
+    select  &i_var._type, 
+            &i_var._stat
+    into    :i_type,
+            :i_stat
+    from __pc_info5;
+  quit;
+
+  %if %sysevalf(
+    (
+      (&i_type = d or &i_type = cat) and ^(&i_stat = n_pct  or &i_stat = pct_n))
+      or
+      (&i_type = cont and ^(&i_stat = median_q1q3 or &i_stat = mean_stderr))
+    ) %then %do;
+    %put ERROR: The "var_list" variable "&i_var_input" has;
+    %put ERROR: type "%sysfunc(compress(&i_type))" and stat "%sysfunc(compress(&i_stat))", which is not compatible!;
+    %goto end_of_macro;    
+  %end;
+%end; /* End of i-loop */
+
 
 /******************************************************************************
 MAKE NUMERIC VERSIONS OF CATEGORICAL VARIABLES
 ******************************************************************************/
+%local i var_list_temp i i_type i_temp i_var_input;
 
 /* To facilitate the handling of categorical variables, we will make new
 versions with numerical values. */
+%do i = 1 %to %sysfunc(countw(&var_list, %str( )));
+  %let i_var_input = %scan(&var_list_input, &i, %str( ));
+  %let i_type = %scan(&var_types, &i, %str( ));
+  %if &i_type = cat %then %do;
 
-/* Update/make macro variables */
-/*%put var_list before num cat vars: &var_list;*/
+    proc sort data = __pc_data2(keep = __var_&i) 
+        out = __pc_labels_cat_var_&i nodupkeys;
+      by __var_&i;
+    run;
+
+    /* Find unique values and make corresponding numeric values */
+    data __pc_labels_cat_var_&i;
+      set __pc_labels_cat_var_&i;
+      if _n_ = 1 then __cat_var_&i = 0;
+      __cat_var_&i + 1;
+    run;
+
+    /* Make new numeric version */
+    proc sort data = __pc_data2;
+      by __var_&i;
+    run;
+
+    data __pc_data2;
+      merge __pc_data2 __pc_labels_cat_var_&i;
+      by __var_&i;
+      drop __var_&i;
+    run;
+
+    /* Add title line and labels for the categorical values to be 
+    include with labels for the other variables later. */
+    data __pc_labels_cat_var_&i;
+      set __pc_labels_cat_var_&i;
+      format __var __label __var_input $500.;
+       if _n_ = 1 then do;
+        __var = "__cat_var_&i._title";
+        __label = "&i_var_input: title";
+        __var_input = "&i_var_input";
+        output;
+      end;
+      __var = "__cat_var_&i" || "_" || cats(__cat_var_&i);
+      __label = "&i_var_input: " || cats(__var_&i);
+      __var_input = "&i_var_input";
+      output;
+      keep __var __label __var_input;
+    run;
+  %end;
+%end;
+
+/* Update "var_list" macro variable */
+%if &print = y %then %do;
+  %put WARNING- "var_list" before new categorial variable names:;
+  %put var_list: &var_list;
+%end;
+
 %let var_list_temp = &var_list;
 %let var_list = ;
 %do i = 1 %to %sysfunc(countw(&var_types, %str( )));
-  %let i_var_types = %scan(&var_types, &i, %str( ));
-  %let i_var_list_temp = %scan(&var_list_temp, &i, %str( ));
-  %let i_var_list_ori = %scan(&var_list_ori, &i, %str( ));
-  %if &i_var_types = cat %then %do; 
+  %let i_type = %scan(&var_types, &i, %str( ));
+  %let i_temp = %scan(&var_list_temp, &i, %str( ));
+  %let i_var_input = %scan(&var_list_input, &i, %str( ));
+  %if &i_type = cat %then %do; 
     %let var_list = &var_list __cat_var_&i;
   %end;
   %else %do;
-    %let var_list = &var_list &i_var_list_temp;
+    %let var_list = &var_list &i_temp;
   %end;
 %end;
-/*%put var_list after num cat vars: &var_list;*/
 
-
-/* Make new version numeric version of categorical variables. */
-%do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-  %let i_var_list_ori = %scan(&var_list_ori, &i, %str( ));
-  %let i_var_types = %scan(&var_types, &i, %str( ));
-  %if &i_var_types = cat %then %do;
-    proc sort data = _pc_data1;
-      by __var_&i;
-    run;
-
-    /* Replace the categorical variables with numeric versions
-    and save the unique original and corresponding numeric values,
-    separately. */
-    data _pc_data1(drop = __var_&i) 
-         _pc_unique_1_&i(keep = __var_&i __cat_var_&i);
-      set _pc_data1;
-      by __var_&i;
-      retain __cat_var_&i;
-      if _n_ = 1 then __cat_var_&i = 0;
-      if first.__var_&i then do;
-        __cat_var_&i = __cat_var_&i + 1;
-        output;
-      end;
-      else output _pc_data1;
-    run;
-
-    data _pc_cat_num_vals_&i;
-      set _pc_unique_1_&i;
-      format __var_name __label $500. ;
-      __var_name = "__cat_var_&i" || "_" || cats(__cat_var_&i);
-      __label = "&i_var_list_ori: " || cats(__var_&i);
-      output;
-      /* Include title line */
-      if _n_ = 1 then do;
-        __var_name = "__cat_var_&i._title";
-        __label = "&i_var_list_ori";
-        output;
-      end;
-      keep __var_name __label;
-    run;
-  %end;
+%if &print = y %then %do;
+  %put WARNING- "var_list" after new categorial variable names:;
+  %put var_list: &var_list;
 %end;
 
 
 /******************************************************************************
 MAKE LABELS FOR OUTPUT TABLE
 ******************************************************************************/
+%local i i_type i_var_input;
 
-/* Create an empty dataset  so that the set-statement below also works
-when there are no categorical variables in the data. */
-data _pc_dummy;
-  format __var_name __label $500.;
-  call missing(__var_name, __label);
+/* Create an empty dataset so that the set-statement below also works
+when there are no categorical variables and associated labels. */
+data __pc_dummy;
+  format __var __label __var_input $500.;
+  call missing(__var, __label, __var_input);
 run;
 
-/* Combine the the datasets with the original categorical variables/values
-and the new correpondings values. Add the remaining variables, and make
-output labels for all variables. */
-data _pc_labels1;
-  set _pc_dummy
+/* Combine labels for categorical variables and add labels for the 
+remaining variables. */
+data __pc_labels1(where = (__var ne ""));
+  set __pc_dummy
   %do i = 1 %to %sysfunc(countw(&var_types, %str( )));
-    %let i_var_types = %scan(&var_types, &i, %str( ));
-    %if &i_var_types = cat %then %do; 
-      _pc_cat_num_vals_&i
+    %let i_type = %scan(&var_types, &i, %str( ));
+    %if &i_type = cat %then %do; 
+      __pc_labels_cat_var_&i
     %end;
   %end;
   ;
   output;
   if _n_ = 1 then do;
-    __var_name = "n";
-    __label = "n";
+    __var = "__n";
+    __label = "__n";
+    __var_input = "__n";
     output;
     %do i = 1 %to %sysfunc(countw(&var_types, %str( )));
-      %let i_var_types = %scan(&var_types, &i, %str( ));
-      %let i_var_list_ori = %scan(&var_list_ori, &i, %str( ));
-      %if &i_var_types ne cat %then %do; 
-        __var_name = "__var_&i";
-        __label = "&i_var_list_ori";
+      %let i_type = %scan(&var_types, &i, %str( ));
+      %let i_var_input = %scan(&var_list_input, &i, %str( ));
+      %if &i_type ne cat %then %do; 
+        __var = "__var_&i";
+        __label = "&i_var_input";
+        __var_input = "&i_var_input";
         output;
       %end;
     %end;
   end;
-  /* Remove the dummy dataline */
-  if __var_name = "" then delete;
 run;
 
 
 /******************************************************************************
-INDICATOR FUNCTIONS FOR CATEGORICAL VARIABLES
+MAKE INDICATOR VARIABLES FOR CATEGORICAL VARIABLES
 ******************************************************************************/
+%local n_values i i_var i_type i_n_values j
+       var_list_temp var_types_temp var_stats_temp
+       i_var_list_temp i_var_types_temp i_var_stats_temp;
 
-/* If the data contains categorical variables we replace each of them with a
-set of dichotomous indicator variables */
+/* If "var_list" contains categorical variables we replace each of them with a
+set of dichotomous indicator variables to facilite the analyses. */
 
 /* Make macro variable with the number of distinct values for 
-each categorical variable. */
-%let nvalues = ;
+each categorical variable, inserting dummy values for other variables. */
+%let n_values = ;
 %do i = 1 %to %sysfunc(countw(&var_types, %str( )));
-  %let i_var_types = %scan(&var_types, &i, %str( ));
-  %if &i_var_types = cat %then %do;
+  %let i_type = %scan(&var_types, &i, %str( ));
+  %if &i_type = cat %then %do;
     proc sql noprint;
-      select __var_&i._nvalues into :i_var_nvalues
-        from _pc_info4;
+      select __var_&i._nvalues into :i_n_values
+        from __pc_info5;
     quit;
   %end;
   %else %do;
-    %let i_var_nvalues = dummy;
+    %let i_n_values = dummy;
   %end;
-  %let nvalues = &nvalues &i_var_nvalues;
+  %let n_values = &n_values &i_n_values;
 %end; /* End of i-loop */
-/*%put nvalues: &nvalues;*/
 
-/* Create dichotomous indicator variables to replace each categorical variable,
-including a dummy variable used as a title line in the final output. */
-data _pc_data2;
-  set _pc_data1;
+%if &print = y %then %do;
+  %put WARNING- Number of distinct values for each (categorical) variable;
+  %put n_values: &n_values;
+%end;
+
+/* Replace each categorical variable with a set of dichotomous variables,
+including a dummy variable for the title */
+data __pc_data3;
+  set __pc_data2;
   %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-    %let i_var_list = %scan(&var_list, &i, %str( ));
-    %let i_var_types = %scan(&var_types, &i, %str( ));
-    %let i_nvalues = %scan(&nvalues, &i, %str( ));
-    %if &i_var_types = cat %then %do;
+    %let i_var = %scan(&var_list, &i, %str( ));
+    %let i_type = %scan(&var_types, &i, %str( ));
+    %let i_n_values = %scan(&n_values, &i, %str( ));
+    %if &i_type = cat %then %do;
       __cat_var_&i._title = 1;
-      %do j = 1 %to &i_nvalues;
+      %do j = 1 %to &i_n_values;
         __cat_var_&i._&j = (__cat_var_&i. = &j.);
       %end;
-      drop &i_var_list;
+      drop &i_var;
     %end;
   %end; /* End of i-loop */
 run;
 
-/* Replace the categorical variables with the sets of dichotomous variables
-in the var_list and var_types macro variables. */ 
-/*%put var_list before replace cat vars: &var_list;*/
-/*%put var_types before replace cat vars: &var_types;*/
-%let var_list_temp = &var_list;
+/* Update macro parameters. */ 
+%if &print = y %then %do;
+  %put WARNING- Macro variables before categorical variables replaced:;
+  %put var_list: &var_list;
+  %put var_types: &var_types;
+  %put var_stats: &var_stats;
+%end;
+
+%let var_list_temp  = &var_list;
 %let var_types_temp = &var_types;
+%let var_stats_temp = &var_stats;
 %let var_list = ;
 %let var_types = ;
+%let var_stats = ;
 
 %do i = 1 %to %sysfunc(countw(&var_list_temp, %str( )));
   %let i_var_list_temp = %scan(&var_list_temp, &i, %str( ));
   %let i_var_types_temp = %scan(&var_types_temp ,&i, %str( ));
-  %let i_nvalues = %scan(&nvalues, &i, %str( ));
+  %let i_var_stats_temp = %scan(&var_stats_temp ,&i, %str( ));
+  %let i_n_values = %scan(&n_values, &i, %str( ));
 
   %if &i_var_types_temp = cat %then %do;
     %let var_list = &var_list &i_var_list_temp._title;
     %let var_types = &var_types title;
-    %do j = 1 %to &i_nvalues;
+    %let var_stats = &var_stats title;
+    %do j = 1 %to &i_n_values;
       %let var_list = &var_list __cat_var_&i._&j;
       %let var_types = &var_types d;
+      %let var_stats = &var_stats &i_var_stats_temp;
     %end;
   %end;
   %else %do;
     %let var_list = &var_list &i_var_list_temp;
     %let var_types = &var_types  &i_var_types_temp;
+    %let var_stats = &var_stats  &i_var_stats_temp;
   %end;
 %end; /* End of i-loop */
-/*%put var_list after replace cat vars: &var_list;*/
-/*%put var_types after replace cat vars: &var_types;*/
+
+%if &print = y %then %do;
+  %put WARNING- Macro variables after categorical variables replaced:;
+  %put var_list: &var_list;
+  %put var_types: &var_types;
+  %put var_stats: &var_stats;
+%end;
 
 
 /******************************************************************************
 SUMMARIZE DATA
 ******************************************************************************/
-
-proc sort data = _pc_data2;
+%local i i_var i_stat;
+proc sort data = __pc_data3;
   by __by:;
 run;
 
-proc means data = _pc_data2 noprint vardef = df;
+/* At this point we can add the created __n variable to the relavant macro 
+paramters, using the value of "stats_d" in "var_stats". */
+
+%if &print = y %then %do;
+  %put WARNING- Macro parameters before adding __n variable;
+  %put var_list: &var_list;
+  %put var_types: &var_types;
+  %put var_stats: &var_stats;
+%end;
+
+%let var_list = __n &var_list;
+%let var_types = d &var_types;
+%let var_stats = &stats_d &var_stats;
+
+%if &print = y %then %do;
+  %put WARNING- Macro parameters after adding __n variable;
+  %put var_list: &var_list;
+  %put var_types: &var_types;
+  %put var_stats: &var_stats;
+%end;
+
+/* Summarize data. */
+proc means data = __pc_data3 noprint vardef = df;
   by __by:;
-  class __group_var;
+  class __strata;
   var &var_list;
   weight __w;
-  output out = _pc_data3(drop = _type_ _freq_)
-    sum(__dummy) = n
-    sum(&var_list) =
-    p25(&var_list) =
-    median(&var_list) =
-    p75(&var_list) =
-    mean(&var_list) =
-    stddev(&var_list) =
-    / autoname noinherit;
-  types () __group_var;
+  output out = __pc_data4(drop = _type_ _freq_)
+    %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
+      %let i_var = %scan(&var_list, &i, %str( ));
+      %let i_stat = %scan(&var_stats, &i, %str( ));
+      %if &i_stat in n_pct pct_n %then %do;
+        sum(&i_var) = &i_var._sum
+        mean(&i_var) = &i_var._mean
+      %end;
+      %else %if &i_stat = median_q1q3 %then %do;
+        p25(&i_var) = &i_var._p25
+        median(&i_var) = &i_var._median
+        p75(&i_var) = &i_var._p75
+      %end;
+      %else %if &i_stat = mean_stderr %then %do;
+        mean(&i_var) = &i_var._mean
+        stddev(&i_var) = &i_var._stddev
+      %end;
+    %end;
+    / noinherit;
+  types () __strata;
 run;
 
-data _pc_data4;
-  set _pc_data3;
-  format __var_name __stat_char $500. 
+/* Retain __n_sum value for total number of observations in each strata of 
+by-variables,  so that __n percentage stats can be calculated. */
+data __pc_data5;
+  set __pc_data4;
+  by __by: __strata;
+  retain __n_total;
+  if first.%scan(&by, -1, %str( )) then do;
+    __n_total = __n_sum;
+  end;
+run;
+
+data __pc_data6;
+  set __pc_data5;
+  format __var __stat_char __percent_stat $500. 
          __stat_num1 __stat_num2 __stat_num3 best32.;
-  /* Make "n" datalines and stat variables */
-  __var_name = "n";
-  __stat_num1 = n;
-  __stat_char = compress(put(__stat_num1, comma32.&dec_n));
-  output;
   %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
-    %let i_var_list = %scan(&var_list, &i, %str( ));
-    %let i_var_types = %scan(&var_types, &i, %str( ));
-    __var_name = "&i_var_list";
-    /* Dichotomous (including recoded categorigal) variables */
-    %if &i_var_types = d %then %do;
-      /* n (%)*/
-      %if &npct_pctn = npct %then %do;
-        __stat_num1 = &i_var_list._sum;
-        __stat_num2 = &i_var_list._sum / n * 100;
-        __stat_num3 = .;
-        if __stat_num1 ne . and __stat_num2 ne . then 
-          __stat_char = compress(put(__stat_num1, comma32.&dec_d_cat)) || 
-                       " (" || 
-                       compress(put(__stat_num2, 32.&dec_pct)) || 
-                       ")";
-        else __stat_char = "n/a";
-      %end;
-      /* % (n) */
-      %if &npct_pctn = pctn %then %do;
-        __stat_num1 = &i_var_list._sum / n * 100;
-        __stat_num2 = &i_var_list._sum;
-        __stat_num3 = .;
-        if __stat_num1 ne . and __stat_num2 ne . then
-          __stat_char = compress(put(__stat_num1, 32.&dec_pct)) || 
-                       " (" || 
-                       compress(put(__stat_num2, comma32.&dec_d_cat)) || 
-                       ")";
-        else __stat_char = "n/a";
-      %end;
+    %let i_var = %scan(&var_list, &i, %str( ));
+    %let i_stat = %scan(&var_stats, &i, %str( ));
+    __var = "&i_var";
+    %if &i_var = __n %then %do;
+    __n_var = __n_total;
     %end;
-    /* Continous variables */
-    %if &i_var_types = cont %then %do;
-      /* Median (Q1-Q3) */
-      %if &median_mean = median %then %do;
-        __stat_num1 = &i_var_list._median;
-        __stat_num2 = &i_var_list._p25;
-        __stat_num3 = &i_var_list._p75;
-        if __stat_num1 ne . and __stat_num2 ne . and __stat_num3 ne . then
-          __stat_char = compress(put(__stat_num1, comma32.&dec_cont)) ||
-                      " (" || compress(put(__stat_num2, comma32.&dec_cont)) ||
-                      ";" || compress(put(__stat_num3, comma32.&dec_cont)) ||
-                      ")";
-        else __stat_char = "n/a";
+    %else %do;
+      __n_var = __n_sum;
+    %end;
+
+    /* n_pct */
+    %if &i_stat= n_pct %then %do;
+      __stat_num1 = &i_var._sum;
+      __stat_num2 = &i_var._sum / __n_var * 100;
+      __stat_num3 = .;
+      %if &add_pct_symbol = y %then %do;
+        __percent_stat = compress(put(__stat_num2, 32.&decimals_pct)) || "%";
       %end;
-      /* Mean (stderr) */
-      %if &median_mean = mean %then %do;
-        __stat_num1 = &i_var_list._mean;
-        __stat_num2 = &i_var_list._stddev;
-        __stat_num3 = .;
-        if __stat_num1 ne . and __stat_num2 ne . then 
-          __stat_char = compress(put(__stat_num1, comma32.&dec_cont)) ||
-                      " (" ||
-                      compress(put(__stat_num2, comma32.&dec_cont)) ||
-                      ")";
-        else __stat_char = "n/a";
+      %else %do;
+        __percent_stat = compress(put(__stat_num2, 32.&decimals_pct));
       %end;
+      if __stat_num1 ne . and __stat_num2 ne . then 
+        __stat_char = 
+          compress(put(__stat_num1, comma32.&decimals_d)) || 
+          " (" || 
+          compress(__percent_stat) || 
+          ")";
+        else __stat_char = "n/a";
+    %end;
+    /* pct_n */
+    %else %if &i_stat = pct_n %then %do;
+      __stat_num1 = &i_var._sum / __n_var * 100;
+      __stat_num2 = &i_var._sum;
+      __stat_num3 = .;
+      %if &add_pct_symbol = y %then %do;
+        __percent_stat = compress(put(__stat_num1, 32.&decimals_pct)) || "%";
+      %end;
+      %else %do;
+        __percent_stat = compress(put(__stat_num1, 32.&decimals_pct));
+      %end;
+      if __stat_num1 ne . and __stat_num2 ne . then
+        __stat_char = 
+          compress(__percent_stat) || 
+          " (" || 
+          compress(put(__stat_num2, comma32.&decimals_d)) || 
+          ")";
+        else __stat_char = "n/a";
+    %end;
+    /* median_q1q3 */
+    %else %if &i_stat = median_q1q3 %then %do;
+      __stat_num1 = &i_var._median;
+      __stat_num2 = &i_var._p25;
+      __stat_num3 = &i_var._p75;
+      if __stat_num1 ne . and __stat_num2 ne . and __stat_num3 ne . then
+        __stat_char = 
+          compress(put(__stat_num1, comma32.&decimals_cont)) ||
+          " (" || 
+          compress(put(__stat_num2, comma32.&decimals_cont)) ||
+          ";" || 
+          compress(put(__stat_num3, comma32.&decimals_cont)) ||
+          ")";
+        else __stat_char = "n/a";
+    %end;
+    /* mean_stderr*/
+    %else %if &i_stat = mean_stderr %then %do;
+      __stat_num1 = &i_var._mean;
+      __stat_num2 = &i_var._stddev;
+      __stat_num3 = .;
+      if __stat_num1 ne . and __stat_num2 ne . then 
+        __stat_char = 
+          compress(put(__stat_num1, comma32.&decimals_cont)) ||
+          " (" ||
+          compress(put(__stat_num2, comma32.&decimals_cont)) ||
+          ")";
+        else __stat_char = "n/a";
     %end;
     /* Titles */
-    %if &i_var_types = title %then %do;
+    %else %if &i_stat = title %then %do;
       __stat_num1 = .;
       __stat_num2 = .;
       __stat_num3 = .;
       __stat_char = "";
     %end;
     output;
-  %end;
-  keep __by: __group_var __var_name __stat:;
+  %end; /* End of i-loop */
+  keep __by: __strata __var __stat:;
 run;
 
 
 /******************************************************************************
-SORT TOTAL GROUP
+SORT OVERALL STRATAS
 ******************************************************************************/
 
-/* Sort data so that the total group of the grouping values are either 
-first or last in each strata of by-variables. */
-data _pc_data5;
-  set _pc_data4;
-  by __by: __group_var;
-  retain __sort_group_var __sort_var_name;
-  if _n_ = 1 then __sort_group_var = 0;
-  if first.__group_var then do;
-    __sort_group_var = __sort_group_var + 1;
-    __sort_var_name = 0;
+/* Sort data so that the overall stratas are either first or last in
+each by-variable strata. */
+data __pc_data7;
+  set __pc_data6;
+  by __by: __strata;
+  retain __sort_strata __sort_var;
+  if _n_ = 1 then __sort_strata = 0;
+  if first.__strata then do;
+    __sort_strata = __sort_strata + 1;
+    __sort_var = 0;
   end;
-  __sort_var_name = __sort_var_name + 1;
+  __sort_var + 1;
 run;
 
-data _pc_data6;
-  set _pc_data5;
-  %if &total_group_last = y %then %do;
-    if missing(__group_var) then __sort_group_var = 10**6;
+data __pc_data8;
+  set __pc_data7;
+  %if &overall_pos = last %then %do;
+    if missing(__strata) then __sort_strata = 10**6;
   %end;
 run;
 
-proc sort data = _pc_data6 out = _pc_data7(drop = __sort:);
-  by  __by: __sort_group_var __sort_var_name;
+proc sort data = __pc_data8 out = __pc_data9(drop = __sort:);
+  by  __by: __sort_strata __sort_var;
 run;
 
 
@@ -1028,27 +1340,38 @@ run;
 TRANSFORM DECIMAL / DIGIT GROUP SYMBOLS 
 ******************************************************************************/
 
-data _pc_data8;
-  set _pc_data7;
-  /* Transform separator symbols to unused symbols */
-  __stat_char = tranwrd(__stat_char, ".", "¤");
+data __pc_data10;
+  set __pc_data9;
+  __stat_char = tranwrd(__stat_char, ".", "#");
   __stat_char = tranwrd(__stat_char, ",", "@");
-  /* Transform decimal separator symbol */
-  %if &sep_dec = remove %then %do;
-    __stat_char = compress(__stat_char, "¤");
+
+  %if &decimal_mark = point %then %do;
+    __stat_char = tranwrd(__stat_char, "#", ".");
   %end;
-  %else %do;
-    __stat_char = tranwrd(__stat_char, "¤", &sep_dec);
+  %else %if &decimal_mark = comma %then %do;
+    __stat_char = tranwrd(__stat_char, "#", ",");
   %end;
-  /* Transform digit group separator. */
-  %if &sep_digit = remove %then %do;
-    __stat_char = compress(__stat_char, "@");
+  %else %if &decimal_mark = space %then %do;
+    __stat_char = tranwrd(__stat_char, "#", " ");
   %end;
-  %else %do;
-    __stat_char = tranwrd(__stat_char, "@", &sep_digit);
+  %else %if &decimal_mark = remove %then %do;
+    __stat_char = compress(__stat_char, "#", "");
   %end;
 
-  /* We create a sorting variable so we can recreate the 
+  %if &big_mark = point %then %do;
+    __stat_char = tranwrd(__stat_char, "@", ".");
+  %end;
+  %else %if &big_mark = comma %then %do;
+    __stat_char = tranwrd(__stat_char, "@", ",");
+  %end;
+  %else %if &big_mark = space %then %do;
+    __stat_char = tranwrd(__stat_char, "@", " ");
+  %end;
+  %else %if &big_mark = remove %then %do;
+    __stat_char = compress(__stat_char, "@", "");
+  %end;
+
+  /* We add a sorting variable so we can recreate the 
   current ordering of datalines after categorical variable
   labels have been merged to the data. */
   __sort_var = _n_;
@@ -1058,77 +1381,88 @@ run;
 /******************************************************************************
 FINALIZE OUTPUT
 ******************************************************************************/
+%local i i_by label_max_length var_input_max_length stat_max_length;
 
 /* Merge labels to the data */
 proc sql;
-  create table _pc_data9(drop = __var_name) as
-    select a.*, b.__label
-      from _pc_data8 as a
+  create table __pc_data11(drop = __var) as
+    select a.*, b.__label, b.__var_input
+      from __pc_data10 as a
       left join 
-      _pc_labels1 as b
-      on a.__var_name = b.__var_name
+      __pc_labels1 as b
+      on a.__var = b.__var
       order by a.__sort_var;
 quit;
 
-/* Determine the maximum length of the __label and __stat_char
-so that these variables can be redefined with the appropriate length
-etc. */
+/* Determine the maximum length of created variables, so that these variables 
+can be redefined with the appropriate length etc. */
 proc sql noprint;
-  select max(length(__label)), max(length(__stat_char)) 
-    into :var_max_length, :stat_max_length
-    from _pc_data9;
+  select  max(length(__label)), 
+          max(length(__var_input)), 
+          max(length(__stat_char)) 
+    into :label_max_length, :var_input_max_length, :stat_max_length
+    from __pc_data11;
 quit;
 
 data &out_ds;
-  /* Reorder columns so that by- and group-variables are the left-most columns. */
+  /* Reorder columns so that "by" and "strata" variables are the left-most 
+  columns. */
   retain
-  %do i = 1 %to %sysfunc(countw(&by_vars_ori, %str( )));
-    %let i_by_vars_ori = %scan(&by_vars_ori, &i, %str( ));
-      __by_var_&i
+  %do i = 1 %to %sysfunc(countw(&by_input, %str( )));
+    %let i_by = %scan(&by_input, &i, %str( ));
+      __by_&i
   %end;
-  __group_var;
-  length __var_name $&var_max_length __stat_char $&stat_max_length;
-  set _pc_data9(rename = (__label = __temp_var_name 
-                          __stat_char = __temp_stat));
+  __strata;
+  length __var $&var_input_max_length
+         __label $&label_max_length 
+         __stat_char $&stat_max_length;
+  set __pc_data11(rename = (
+      __label = __temp_label
+      __stat_char = __temp_stat_char
+    ));
 
-  __var_name = __temp_var_name;
-  __stat_char = __temp_stat;
+  __var = __var_input;
+  __label = __temp_label;
+  __stat_char = __temp_stat_char;
 
-  /* If no group variable was specified we remove the automatically 
-  created total category datalines and the dummy group variable. */
-  %if &group_var_ori = null %then %do;
-    if missing(__group_var) then delete;
-    drop __group_var;
+  /* If no "strata" variable was specified we remove the automatically 
+  created overall strata datalines and the dummy strata variable. */
+  %if %lowcase(&strata) = null %then %do;
+    if missing(__strata) then delete;
+    drop __strata;
   %end;
   %else %do;
-    rename __group_var = &group_var_ori;
+    rename __strata = &strata;
   %end;
-  /* If no by_vars were given we delete the dummy by variable. */
-  %if &by_vars_ori = null %then %do;
-    drop __by_var_1;
+  /* If no "by" variables were given we delete the dummy by variable. */
+  %if %lowcase(&by_input) = null %then %do;
+    drop __by_1;
   %end;
   %else %do;
-    %do i = 1 %to %sysfunc(countw(&by_vars_ori, %str( )));
-      %let i_by_vars_ori = %scan(&by_vars_ori, &i, %str( ));
-      rename __by_var_&i = &i_by_vars_ori;
+    %do i = 1 %to %sysfunc(countw(&by_input, %str( )));
+      %let i_by = %scan(&by_input, &i, %str( ));
+      rename __by_&i = &i_by;
     %end;
   %end;
-  %if &inc_num_stat_vars = n %then %do;
+  /* Drop numerical statistic variables if specified. */
+  %if &add_num_comp = n %then %do;
     drop __stat_num:;
   %end;
-  %if &inc_report_dummy = y %then %do;
+  /* Add dummy variable if specified. */
+  %if &report_dummy = y %then %do;
     __report_dummy = 1;
   %end;
-  drop __temp: __sort_var;
+  drop __temp_: __var_input __sort_var;
 run;
 
 
 %end_of_macro:
 
-/* Delete temporary datasets created by the macro */
-%if &del = y %then %do;
+/* Delete temporary datasets created by the macro, also when 
+"del" has not be specified as either y or n. */
+%if &del ne n  %then %do;
   proc datasets nodetails nolist;
-    delete _pc_:;
+    delete __pc_:;
   run;
   quit;
 %end; 
