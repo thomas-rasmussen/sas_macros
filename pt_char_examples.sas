@@ -1,115 +1,107 @@
 /*******************************************************************************
-EXAMPLES
+EXAMPLE - INTENDED USE WITH PROC REPORT
 *******************************************************************************/
 
-/* Standard use of macro using a group variable. */
-data ex1_data;
+/* Example of intended use of the macro with proc report, to make a standard
+"table1" of a population with patient characteristics of the whole population
+and in stratas of an exposure variable. */
+
+data studypop;
   call streaminit(1);
   do i = 1 to 1000;
-    group = rand("bernoulli", 0.5);
+    exposure = rand("bernoulli", 0.5);
     bin_var = rand("bernoulli", 0.5);
     cont_var = rand("normal", 0, 1);
     cat_var = rand("binomial", 0.5, 3);
     output;
   end;
-  drop i;
 run;
 
 %pt_char(
-	in_ds = ex1_data,
-  out_ds = ex1_table,
-	var_list =  cont_var cat_var bin_var,
-  group_var = group
-	);
-
-proc format;
-  value _group_fmt 
-    0 = "Group 0 label"
-    1 = "Group 1 label"
-    . = "Total"
-    ;
-  value $_var_fmt
-    "n" = "Number of patients"
-    "bin_var" = "Binary variable, n (%)"
-    "cont_var" = "Continuous variable, median (Q1-Q3)"
-    "cat_var" = "Categorical variable, n (%):"
-    "cat_var: 0" = "  0"
-    "cat_var: 1" = "  1"
-    "cat_var: 2" = "  2"
-    "cat_var: 3" = "  3"
-    ;
-run;
-
-proc report data = ex1_table missing;
-  columns __var_name group, (__stat_char __report_dummy);
-  define __var_name / "" group format = $_var_fmt. order = data;
-  define group / "" across format = _group_fmt. order = data;
-  define __stat_char / "" display;
-  define __report_dummy / noprint;
-run;
-
-
-/* A more advanced example using a by variable to make a wide
-output table with columns for each by-value, and utilizing some
-of the optional parameters to:
-1) Calculate mean(stderr) statistics for continuous variables
-instead of median(Q1-Q3)
-2) Make % (n) instead of n (%) statistics for dichotomous and
-categorical variables
-3) Change the number of decimals that are included in the output
-for means/stderr and percentages
-4) Change the decimal and digit group separator symbols
-5) Allow missing values of continuous variables
-6) Put the total groups as the first group instead of the last
-7) Include each part of the output statistics as numereric variables
-and use these variables to censor person-sensitive data.
-*/
-data ex2_data;
-  call streaminit(2);
-  do i = 1 to 1000;
-    if rand("uniform") < 0.01 then by_var = "A";
-    else by_var = "B";
-    group = rand("bernoulli", 0.5);
-    bin_var = rand("bernoulli", 0.5);
-    cont_var = rand("normal", 0, 1);
-    if rand("uniform") < 0.3 then cont_var = .;
-    output;
-  end;
-  drop i;
-run;
-
-%pt_char(
-  in_ds = ex2_data,
-  out_ds = ex2_table1,
-  var_list = bin_var cont_var,
-  group_var         = group,
-  by_vars           = by_var,
-  median_mean       = mean,
-  npct_pctn         = pctn,
-  dec_cont          = 1,
-  dec_pct           = 1,
-  sep_dec           = ",",
-  sep_digit         = ".",
-  allow_cont_miss   = y,
-  total_group_last  = n,
-  inc_num_stat_vars = y
+	in_ds = studypop,
+  out_ds = table1,
+	var_list = cont_var cat_var bin_var,
+  strata = exposure
 );
 
-data ex2_table2;
-  set ex2_table1;
-  if __var_name = "bin_var" and 0 < __stat_num2 < 5 
-    then __stat_char = "n/a";
-  drop __stat_num:;
+proc format;
+  value exp_fmt
+    . = "All patients" 
+    0 = "Non-exposed"
+    1 = "Exposed"
+  ;
+  value $__label
+    "__n" = "^S = {font_weight = bold}Number of patients"
+    "cont_var" = "^S = {font_weight = bold}Continuous variable, median (Q1-Q3)"
+    "cat_var: title" = "^S = {font_weight = bold}Categorical variable, N (%):"
+    "cat_var: 0" = "  Value: 0"
+    "cat_var: 1" = "  Value: 1"
+    "cat_var: 2" = "  Value: 2"
+    "cat_var: 3" = "  Value: 3"
+    "bin_var" = "^S = {font_weight = bold}Binary variable, N (%)"
+  ;
 run;
 
-proc report data = ex2_table2 missing;
-  columns __var_name by_var, group, (__stat_char __report_dummy);
-  define __var_name / "" group order = data;
-  define by_var / across order = data;
-  define group / "" across order = data;
+ods escapechar = "^";
+ods rtf file = "S:\Thomas Rasmussen\github_dev\pt_char\example.rtf"
+  style = journal ;
+proc report data = table1 missing
+    style(report) = {font_size = 14pt}
+    style(header) = {font_size = 14pt font_weight = bold}
+    style(column) = {font_size = 14pt just = c};
+  columns __label exposure, (__stat_char __report_dummy);
+  define __label / "" group format = $__label. order = data
+    style(column) = {just = l asis = on};
+  define exposure / "" across format = exp_fmt. order = data;
   define __stat_char / "" display;
   define __report_dummy / noprint;
 run;
+ods rtf close;
+ods listing;
 
 
- 
+/*******************************************************************************
+EXAMPLE - MANUEL SPECIFICATION OF VARIABLE TYPES
+*******************************************************************************/
+
+/* In some cases the macro can not correctly guess the types of variables in
+"var_list". Here we show how "var_types" and "cat_groups_max" can be used to
+override the default algorithm used by the macro. */
+
+data studypop;
+  call streaminit(1234);
+  do i = 1 to 1000;
+    cat_many_groups = round(rand("uniform"), .01);
+    cat_bin_values = rand("bernoulli", 0.5);
+    cont_few_values = round(rand("uniform"), .1);
+    output;
+  end;
+run;
+
+/* If only cat_many_groups is of interest, we can see that the default 
+behavior of the macro treats the variable as a continuous variable. In this
+case, we can redemy the situation by fine-tuning the algorithm used to guess
+the type of the variable by using the "cat_groups_max" macro parameter. */
+%pt_char(
+	in_ds = studypop,
+  out_ds = table1,
+	var_list = cat_many_groups
+);
+%pt_char(
+	in_ds = studypop,
+  out_ds = table1,
+	var_list = cat_many_groups,
+  cat_groups_max = 110
+);
+
+/* But if we simultaneously want to include cont_few_values this solution
+will not work. Futhermore, cat_bin_values can not be properly recognized
+as a categorical variable no matter the value of "cat_groups_max". Instead,
+we specify the variable types of each variable manually using "var_types",
+and at the same time */
+%pt_char(
+	in_ds = studypop,
+  out_ds = table1,
+	var_list = cat_bin_values cont_few_values cat_many_groups,
+  var_types = cat cont cat
+);
