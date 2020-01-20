@@ -1,178 +1,529 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.1.0
-DATE:       2020-01-12
+VERSION:    0.2.0
+DATE:       2020-01-20
 LICENCE:    Creative Commons CC0 1.0 Universal  
             (https://www.tldrlegal.com/l/cc0-1.0)
 ********************************************************************************
 DESCRIPTION:
-See examples for how to use the macro.
+Matching using a hash-table merge approach. The input dataset is expected to
+be a source population with the following information on each person:
+- A unique id.
+- Start and end of follow-up period where the person is eligible to be a 
+case/control (exposed/unexposed) and free of whatever other relevant diseases 
+and events.
+- Date, if any, the person becomes a case (exposed).
+- Information on matching variables. 
 
-Developed using SAS 9.4.
-
-Find the newest version of the macro and accompanying examples at:
+Find the newest version of the macro and accompanying examples and tests at:
 https://github.com/thomas-rasmussen/sas_macros
 ********************************************************************************
 NOTES:
 Version 0.1.0:
 - First initial attempt at making macro using a hash-table merge to do matching.
-  Should work as intended, should be used with caution.
-********************************************************************************
-TODO:
-- Formulas used to estimate the approximate number of iterations used in
-  hash-table merge::
-  https://math.stackexchange.com/questions/1155615/probability-of-picking-each-
-  of-m-elements-at-least-once-after-n-trials 
-  Seems to be working, but maybe look into the math.
-- Documentation. See pt_char for inspiration.
-- input tests. See pt_char for inspiration.
-- tests of macro. See pt_char for inspiration.
-- Macro should also produce a dataset with diagnostics of each strata, eg
-  number of cases, control, max_ite_val, max_ite made to find all controls or
-  other stat, and so on.
-- Macro should also produce a list of ids and match var values, for which
-  no matched could be found?
-- Make by statement as in pt_char?
+  Should work as intended, but should be used with caution.
+Version 0.2.0: 
+- Further development of the macro. 
 ********************************************************************************
 PARAMETERS:
 *** REQUIRED ***
-
+in_ds:            (libname.)member-name of input dataset on source population.         
+out_pf:           (libname.)member-name prefix of output datasets. The following
+                  datasets are created by the macro:
+                  &out_pdf._matches: Matched population.
+                  &out_pdf._no_matches: Information on cases for which no or 
+                  only some of the wanted matches could be found.
+                  &out_pdf._info: Miscellaneous helpful information and 
+                  diagnostics that can be helpful to evaluate the 
+                  appropriateness of the matched cohrot.
+id_var:           Person id variable. Missing values not allowed. Must
+                  be unique in stratas defined by variables given in "by". 
+fu_start:         Start of follow-up variable. Must be a numeric variable.
+                  Missing values not allowed.
+fu_end:           End of follow-up variable. Must be a numeric variable.
+                  Missing values not allowed.
+                  fu_end must also fullfil fu_start <= fu_end.
+index_var:        Variable with date, if any, the person becomes a 
+                  case. Must be a numeric variable.
 *** OPTIONAL ***
-
+match_vars:       Space-separated list of matching variables. Default is 
+                  match_vars = null, ie no matching variables are used. 
+n_controls:       Number of controls to match to each case. 
+                  Default is n_controls = 10.
+replace:          Match with replacement:
+                  - Yes: replace = y (default)
+                  - No: replace = n  
+where:            Condition used to to restrict the input dataset in a where-
+                  statement, eg where = %str(var = "value"). 
+by:               Space-separated list of by variables. Default is by = null,
+                  ie no by variables. 
+max_tries:        The number of tries used to find all matches for each
+                  case is
+                  n = min(&n_controls * n_99pct, &max_tries)
+                  where n_99pct = round(k*[log(k)- ln(-ln(p))]), p = 0.99
+                  is the approximate number of tries needed to have a 
+                  99% probability (p), to have tried all potential controls (k).
+                  We multiply this approximate number with &n_matches, since
+                  we want to be reasonably sure we can find all the matches we
+                  want, and we take the minimum of this number and &max_tries,
+                  to set a limit for very large stratas. 
+                  Default is max_tries = 10**6. 
+                  n_99pct formula is from 
+                  https://math.stackexchange.com/questions/1155615/
+                  probability-of-picking-each-of-m-elements-at-least-once-after-
+                  n-trials.
+ctrl_until_case:  Are cases allowed to be controls until they become cases:
+                  - Yes: ctrl_until_case = y (default)
+                  - No: ctrl_until_case = n
+seed:             Seed used for random number generation. Default is seed = 0.
+del:              Delete intermediate datasets created by the macro:
+                  - Yes: del = y (default)
+                  - no:  del = n              
 ******************************************************************************/
 %macro hash_match(
-  in_ds = ,
-  out_ds = ,
-  id_var = ,
-  index_date = ,
-  match_vars = ,
-  fu_start = ,
-  fu_end = ,
-  case_as_control = y,
-  n_matches = 10,
-  ite_max_val = 10**6,
-  seed = 0,
-  del = y
-);
+  in_ds           = ,
+  out_pf          = ,
+  id_var          = ,
+  fu_start        = ,
+  fu_end          = ,
+  index_var       = ,
+  match_vars      = null,
+  n_controls      = 10,
+  replace         = y,
+  where           = %str(),
+  by              = null,
+  max_tries       = 10**6,
+  ctrl_until_case = y,
+  seed            = 0,
+  del             = y
+) / minoperator mindelimiter = ' ';
 
-/* Save value of the NOTES option*/
-%local opt_notes_value;
-%let opt_notes_value = %sysfunc(getoption(notes));
 
-data _null_;
-  set &in_ds(obs = 1);
-  %do i = 1 %to %sysfunc(countw(&match_vars, %str( )));
-    %let i_var = %scan(&match_vars, &i, %str( )); 
-    call symput("match_var_vt_&i", vtype(&i_var));
+/*******************************************************************************
+INPUT PARAMETER CHECKS 
+*******************************************************************************/
+%local  vars i i_var j j_var ds_id rc var_vt;
+
+%let vars = 
+  in_ds out_pf id_var index_var match_vars fu_start fu_end where by 
+  ctrl_until_case replace n_controls max_tries seed del;               
+
+/* Check that none of the macro parameters are empty (except possibly where). */
+%do i = 1 %to %sysfunc(countw(&vars, %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %if (&i_var in where) = 0 and %sysevalf(&&&i_var = ) %then %do;
+  %put ERROR: Macro parameter "&i_var" not specified!;
+  %goto end_of_macro;    
   %end;
-run;
+%end;
+ 
+/* Remove single and double quotes from macro parameters where they are not 
+supposed to be used, but might have been used anyway´. */
+%do i = 1 %to %sysfunc(countw(&vars, %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %if (&i_var in where ) = 0 %then %do;
+    %let &i_var = %sysfunc(tranwrd(&&&i_var, %nrstr(%"), %str( )));
+    %let &i_var = %sysfunc(tranwrd(&&&i_var, %nrstr(%'), %str( )));
+  %end;
+%end;
 
-%do i = 1 %to %sysfunc(countw(&match_vars, %str( )));
-  %let i_var = %scan(&match_vars, &i, %str( )); 
-  %put &i_var var type: &&match_var_vt_&i;
+/* Make sure all relevant macro parameter values are in lowercase. */
+%let vars = ctrl_until_case replace del;
+%do i = 1 %to %sysfunc(countw(&vars, %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %let &i_var = %lowcase(&&&i_var);
+%end;
+
+/* Check that all specified variable names are valid, exists in the input
+dataset, and that none of the specified variables have a "__" prefix. 
+Note that "dummy" has been included in %qsubstr call so that the scenario
+of one variable with a very short name can be handles correctly. */
+%let vars = id_var index_var fu_start fu_end match_vars by;
+%do i = 1 %to %sysfunc(countw(&vars, %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %do j = 1 %to %sysfunc(countw(&&&i_var, %str( )));
+    %let j_var = %scan(&&&i_var, &j, %str( ));
+    %if %sysfunc(nvalid(&j_var)) = 0 %then %do;
+      %put ERROR: Variable "&j_var" specified in "&i_var = &&&i_var";
+      %put ERROR: is not a valid SAS variable name!;
+      %goto end_of_macro;
+    %end;
+    %if %lowcase(&j_var) ne null %then %do;
+      %let ds_id = %sysfunc(open(&in_ds));
+      %if %sysfunc(varnum(&ds_id, &j_var)) = 0 %then %do;
+        %let rc = %sysfunc(close(&ds_id));
+        %put ERROR: Variable "&j_var" specified in "&i_var = &&&i_var" does;
+        %put ERROR: not exist in the input dataset "in_ds = &in_ds"!;
+        %goto end_of_macro; 
+      %end;
+    %end;
+    %let rc = %sysfunc(close(&ds_id));
+    %if %eval(%qsubstr(&j_var dummy, 1, 2) = __) %then %do;
+      %put ERROR: Variable "&j_var" specified in "&i_var = &&&i_var" has a "__" prefix;
+      %put ERROR: This is not allowed to make sure that input variables are not;
+      %put ERROR: overwritten by temporary variables created by the macro!;
+      %goto end_of_macro; 
+    %end;
+  %end; /* End of j-loop */
+%end; /*End of i-loop */
+
+
+/*** in_ds checks ***/
+
+/* Check input dataset exists. */
+%if %sysfunc(exist(&in_ds)) = 0 %then %do;
+  %put ERROR: Specified input dataset "in_ds = &in_ds" does not exist!;
+  %goto end_of_macro;
+%end;
+
+/* Check input dataset is not empty. */
+%let ds_id = %sysfunc(open(&in_ds));
+%if  %sysfunc(attrn(&ds_id, nobs)) = 0 %then %do;
+  %let rc = %sysfunc(close(&ds_id));
+  %put ERROR: Input dataset "in_ds = &in_ds" is empty!;
+  %goto end_of_macro;
+%end;
+%let rc = %sysfunc(close(&ds_id));
+
+
+/*** out_pf checks ***/
+
+/* prefix needs to be a valid (libname.)member-name, where the member-name
+part can have a length of 23 at the most, to make sure that the added 
+surfix of the output dataset names are not too long. */
+
+/* Regular expression: (lib-name.)member-name, where the libname is
+optional. The libname must start with a letter, followed by 0-7 letters, 
+numbers or underscores and must end with a ".". Member-name part must start
+with a letter or underscore, and is followed by 0-22 letters ,numbers or 
+undrscores. The whole regular expression is case-insentitive. */
+%if %sysfunc(prxmatch('^([a-z][\w\d]{0,7}\.)*[\w][\w\d]{0,22}$', &out_pf)) = 0 
+  %then %do;
+  %put ERROR: Output prefix (libname.)member-name prefix "out_pf = &out_pf" is;
+  %put ERROR: either invalid or the member-name part has length greater than 23;
+  %put ERROR: which is not allowed!;
+  %goto end_of_macro; 
 %end;
 
 
-data __hm_data1;
-  set data1;
-  __id = &id_var;
-  __index = &index_date;
-  __start = &fu_start;
-  __end = &fu_end;
-  __match_on =
-  %do i = 1 %to %sysfunc(countw(&match_vars, %str( )));
-    %let i_var = %scan(&match_vars, &i, %str( )); 
-    %if &i = 1 %then %do;
-      %if &&match_var_vt_&i = N %then %do;
-        strip(put(&i_var, best12.))
-      %end;
-      %else %if &&match_var_vt_&i = C %then %do;
-        strip(&i_var)
-      %end;
-    %end;
-    %else %do;
-      %if &&match_var_vt_&i = N %then %do;
-        || "_" || strip(put(&i_var, best12.))
-      %end;
-      %else %if &&match_var_vt_&i = C %then %do;
-        || "_" || strip(&i_var)
-      %end;
-    %end;
+/*** id_var ***/
+
+/* Check only one variable specified in "id_var". */
+%if %eval(%sysfunc(countw(&id_var, %str( ))) > 1) %then %do;
+  %put ERROR: Only one variable can be specified in "id_var = &id_var"!;
+  %goto end_of_macro; 
+%end;
+
+
+/*** index_var, fu_start, and fu_end checks ***/
+
+/* Check for each macro parameter that only one variable is specified, and
+that the variable is numeric. */
+%let vars = index_var fu_start fu_end;
+%do i = 1 %to %sysfunc(countw(&vars, %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %if %eval(%sysfunc(countw(&&&i_var, %str( ))) > 1) %then %do;
+      %put ERROR: Only one variable can be specified in "&i_var = &&&i_var"!;
+      %goto end_of_macro; 
   %end;
-  ;
-  keep __: &match_vars;
+  data _null_;
+    set &in_ds(obs = 1);
+    call symput("var_vt", vtype(&&&i_var));  
+  run;
+  %if &var_vt ne N %then %do;
+    %put ERROR: The variable specified in "&i_var = &&&i_var" must be numeric!;
+    %goto end_of_macro;
+  %end;
+%end; /* End of i-loop */
+
+
+/*** n_controls and max_tries checks ***/
+
+/* Check that macro parameter value is a positive integer. "max_tries" is
+likely to be a large number which is easier to write on the form "10 ** x", so
+we evaluate the expression given in &max_tries before checking that it is an
+integer.
+Regular expression: Starts with a number 1-9, followed by, and ends with,
+one or more digits (so that eg. 0 is not allowed, but 10 is) */
+%if %sysfunc(prxmatch('^[1-9]\d*$', &n_controls)) = 0 %then %do;
+  %put ERROR: "n_controls" must be a positive integer!;
+  %goto end_of_macro; 
+%end;
+%if %sysfunc(prxmatch('^[1-9]\d*$', %sysevalf(&max_tries))) = 0 %then %do;
+  %put ERROR: "max_tries" must be a positive integer!;
+  %goto end_of_macro; 
+%end;
+
+
+/*** seed checks ***/
+
+/* Must be an integer */
+%if %sysfunc(prxmatch('^-*\d*$', &seed)) = 0 %then %do;
+  %put ERROR: "seed = &seed" must be an integer!;
+  %goto end_of_macro; 
+%end;
+
+
+/*** "ctrl_until_case", "replace", and "del" checks ***/
+
+/* Check that y/n macro parameters are specified correctly */
+%let vars = ctrl_until_case replace del;            
+%do i = 1 %to %sysfunc(countw(&vars, %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %if %eval(&&&i_var in n y) = 0 %then %do;
+    %put ERROR: "&i_var = &&&i_var" does not have a valid value!;
+    %goto end_of_macro;
+  %end;
+%end;
+          
+                 
+/******************************************************************************
+LOAD INPUT DATA
+******************************************************************************/
+%local match_stratas;
+
+/* The stratas in which we will do matching is defined by the variables given
+in &match_vars and &by. */
+%let match_stratas = ;
+%if &match_vars ne null %then %let match_stratas = &match_vars;
+%if &by ne null %then %let match_stratas = &match_stratas &by;
+
+/* If no matching or by variables are given, we will create a dummy strata
+variable to facilitate the analyses. */
+%if &match_stratas = %then %let match_stratas = __dummy_strata;
+
+/* Load and restrict input data, and rename variables to facilitate the
+analyses*/
+data __hm_data1(rename = (
+    &fu_start = __start
+    &fu_end  = __end
+    &index_var = __index
+    &id_var = __id
+  ));
+  set &in_ds;
+  where &where;
+  %if &match_stratas = __dummy_strata %then %do;
+    __dummy_strata = "null";
+  %end;
 run;
 
-/* Create index. Read up on SAS options like ibufsize to see if something
-could be tweaked. */
-proc sort data = __hm_data1 out = __hm_data2(index = (__match_on));
-	by __match_on;
+/* If the specified where-condition results in any warnings or errors,
+the macro is terminated. */
+%if &syserr ne 0 %then %do;
+  %put ERROR- The specified "where" condition:;
+  %put ERROR- "where = &where";
+  %put ERROR- produced a warning or an error. Macro terminated!;
+  %goto end_of_macro; 
+%end;
+
+
+/******************************************************************************
+CHECK INPUT DATA
+******************************************************************************/
+%local miss_id miss_start miss_end end_start;
+
+/* Check that __id values are unique (in stratas of by-variables values if
+specified). */
+proc sort data = __hm_data1 nodupkeys 
+    dupout = __hm_dup_id(keep = %if &by ne null %then %do; &by %end; __id);
+  by %if &by ne null %then %do; &by %end; __id;
 run;
-/*data __hm_data2;*/
-/*  set __hm_data1;*/
-/*run;*/
+
+proc sql noprint;
+  select count(*) 
+    into :n_dups
+    from __hm_dup_id;
+quit;
+
+%if %sysevalf(&n_dups > 0) %then %do;
+  %put ERROR- id variable "id_var = &id_var" contain dublicate values!;
+  %if &by ne null %then %do;
+    %put ERROR- in one or more stratas defined by "by = &by".;
+  %end;
+  %goto end_of_macro;
+%end;
+
+/* Check that __id, __start __end does not contain missing values, and that
+__start <= __end for all persons. */
+data __hm_check_data1;
+  set __hm_data1(keep = __start __end __id);
+  __miss_id = missing(__id);
+  __miss_start = (__start = .);
+  __miss_end = (__end = .);
+  __end_start = (__end < __start);
+  output;
+run;
+
+proc means data = __hm_check_data1 noprint;
+  output out = __hm_check_data2
+    sum(__miss_id __miss_start __miss_end __end_start) = 
+      __miss_id __miss_start __miss_end __end_start
+    / noinherit;
+run;
+
+proc sql noprint;
+  select __miss_id, __miss_start, __miss_end, __end_start 
+    into :miss_id, :miss_start, :miss_end, :end_start 
+    from __hm_check_data2;
+quit;
+
+%if %sysevalf(&miss_id > 0) %then %do;
+  %put ERROR- Variable "&id_var" has &miss_id observations with missing values!; 
+  %goto end_of_macro;
+%end;
+%if %sysevalf(&miss_start > 0) %then %do;
+  %put ERROR- Variable "&fu_start" has &miss_start observations with missing values!;
+  %goto end_of_macro;
+%end;
+%if %sysevalf(&miss_end > 0) %then %do;
+  %put ERROR- Variable "&fu_end" has &miss_end observations with missing values!;
+  %goto end_of_macro;
+%end;
+%if %sysevalf(&end_start > 0) %then %do;
+  %put ERROR- There are &end_start persons have "&fu_end" < "&fu_start"!; 
+  %goto end_of_macro;
+%end;
 
 
-/* Find unique combinations of macthing variables values and save them
-in macro variables. */
-proc sort data = __hm_data2(keep = __match_on &match_vars) 
-    out = __hm_match_values nodupkeys;
-  by __match_on;
+/******************************************************************************
+PREPARE DATA
+******************************************************************************/
+%local i i_strata n_strata;
+
+/* Find strata values and make a new composite strata variable. */
+proc sort data = __hm_data1(keep = &match_stratas) 
+    out = __hm_stratas1 nodupkeys; 
+  by &match_stratas;
+run;
+
+data __hm_stratas2;
+  set __hm_stratas1;
+  __strata = _n_;
 run;
 
 proc sql noprint;
   select count(*) into :n_strata
-    from __hm_match_values;
+    from __hm_stratas2;
 quit;
 
-/* Make sure that there are no matched datasets from a previous run of
-the macro in the work directory before we run the macro. */
+/* replace matching variables in data with the new composite strata variable.*/
+proc sql;
+  create table __hm_data2 as
+    select a.__id, a.__index, a.__start, a.__end, b.__strata
+      from __hm_data1 as a
+      left join 
+      __hm_stratas2 as b
+  on
+  %do i = 1 %to %sysfunc(countw(&match_stratas, %str( )));
+    %let i_strata = %scan(&match_stratas, &i, %str( ));
+    %if &i = 1 %then %do;
+      a.&i_strata = b.&i_strata
+    %end;
+    %else %do;
+      and a.&i_strata = b.&i_strata
+    %end;
+  %end; 
+  ;
+quit;
+
+/* Sort data, and then create index. */
+proc sort data = __hm_data2 out = __hm_data2(index = (__strata));
+	by __strata;
+run;
+
+
+/******************************************************************************
+MATCH
+******************************************************************************/
+%local  points progress opt_notes_value vars n_strata_cases n_stratat_controls 
+        max_cnt strata_time_all i strata_start strata_end strata_time 
+        strata_median j j_point j_pct est_finish max_attempts;
+
+/* Determine the points in the matching procedure where information is 
+printed to the log, based on the total number of stratas. */
+data __hm_progress_points;
+  do i = 1 to 10;
+    point = ceil(i * &n_strata / 10);
+    progress = compress(put(point / &n_strata, percent10.));
+    output;
+  end;
+  drop i;
+run;
+
+proc sql noprint;
+  select distinct point, progress
+    into :points separated by "$" 
+         ,:progress separated by "$"
+    from __hm_progress_points;
+quit;
+
+/* Save value of the NOTES option in a macro variable so we can restore
+it later. */
+%let opt_notes_value = %sysfunc(getoption(notes));
+options nonotes;
+
+/* Make sure to delete certain possible dataset from a previous run of
+the macro in the work directory, before we do the matching. */
 proc datasets nolist nodetails;
-  delete __hm_match1_:;
+  delete __hm_data_strata __hm_cases __hm_potential_controls
+         __hm_matches __hm_not_full_matches_id
+         __hm_all_matches1 __hm_all_not_full_matches_id1
+         __hm_info1 __hm_strata_info;
 run;
 quit;
 
-/* Find matches for each value of the set of matching variables. */
-options nonotes;
-%do i = 1 %to &n_strata;
+/* Find the length of some of the input variables. */
+%let vars = __id __index __start __end;
+%do i = 1 %to %sysfunc(countw(&vars, %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %local &i_var._type &i_var._length;
   proc sql noprint;
-    select __match_on
-      into :i_match_on
-      from __hm_match_values(firstobs = &i obs = &i);
-    %do j = 1 %to %sysfunc(countw(&match_vars, %str( ))); 
-      %let j_var = %scan(&match_vars, &j, %str( ));
-      select &j_var
-      into : val_&j
-      from __hm_match_values(firstobs = &i obs = &i);  
-    %end;
+    select type, length 
+      into :&i_var._type, :&i_var._length
+      from sashelp.vcolumn
+      where libname = "WORK" and memname = "__HM_DATA2"
+        and name = "&i_var";
   quit;
-/*  %put Ite &i/%sysfunc(strip(&n_strata)): strata = &i_match_on;*/
+  %let &i_var._type = %sysfunc(compress(&&&i_var._type));
+  %let &i_var._length = %sysfunc(compress(&&&i_var._length));
+  %if &&&i_var._type = char %then %let &i_var._length = $&&&i_var._length;
+%end;
+
+/* Find matches in each strata. */
+%do i = 1 %to &n_strata;
+  
+  %if &i = 1 %then %do;
+    %put Matching progress:;
+    %put %sysfunc(datetime(), datetime32.): %str(  0%%);
+  %end;
+
+  %let strata_start = %sysfunc(datetime());
 
   /* Restrict data strata. */
-  data __hm_match_strata;
-    set __hm_data2(keep = __:);
-    where __match_on = "&i_match_on";
+  data __hm_data_strata;
+    set __hm_data2;
+    where __strata = &i;
   run;
 
-  /* Find cases in matching strata */
+  /* Find cases in strata */
   data __hm_cases;
-    set __hm_match_strata;
+    set __hm_data_strata;
     where __start <= __index <= __end;
     drop __start __end;
   run;
 
   /* Make a dataset with potential controls, and add a
   variable with the observation number. */
-  data __hm_controls(rename=(
-          __id = __id_control
-          __index = __index_control
-          __start = __start_control
-          __end = __end_control
+  data __hm_potential_controls(rename=(
+          __id = __id_ctrl
+          __index = __index_ctrl
+          __start = __start_ctrl
+          __end = __end_ctrl
           )); 
-    set __hm_match_strata;
-  %if &case_as_control = n %then %do;
-    where __index = .;
-  %end;
+    set __hm_data_strata;
+    %if &ctrl_until_case = n %then %do;
+      where __index = .;
+    %end;
     format __obs 10.;
     __obs=_n_;
   run;
@@ -180,117 +531,196 @@ options nonotes;
   /* Find number of cases and controls in strata. */
   proc sql noprint;
     select count(*) 
-      into :n_cases
+      into :n_strata_cases
       from __hm_cases;
     select count(*) 
-      into :n_controls
-      from __hm_controls;
+      into :n_strata_controls
+      from __hm_potential_controls;
   quit;
 
-/* Find controls for each case using a hash-table merge. */
-%if &n_controls > 0 %then %do;
-  data __hm_match1_&i;
-  	call streaminit(&seed.);
-  	length	__obs 8 __id_control $12 __index_control 8;
-  	format	__match_id __obs 10. __id_control $12.
-            __index_control date9.;
-  	/* Load potential control dataset into the hash object */	
-  	if _n_ = 1 then do;
-  		declare hash h(dataset: "__hm_controls");
-  		declare hiter iter("h");
-  		h.defineKey("__obs");
-  		h.defineData(
-  			"__obs", "__id_control", "__index_control", "__start_control",
-        "__end_control"
-  			);
-  		h.defineDone();
-  		call missing(
-  			__obs, __id_control, __index_control, __start_control, __end_control
-  			);
+  /* If both cases and controls in strata, find controls for each case using a 
+  hash-table merge. */
+  %if &n_strata_controls > 0 and &n_strata_cases > 0 %then %do;
+    data __hm_matches(drop = __n)
+         __hm_not_full_matches_id(keep = __id __strata __index __n);
+    	call streaminit(&seed.);
+    	length	__obs 8 __id_ctrl &__id_length __index_ctrl &__index_length 
+              __start_ctrl &__start_length __end_ctrl &__end_length;
+    	/* Load potential controls hash object */	
+    	if _n_ = 1 then do;
+    		declare hash h(dataset: "__hm_potential_controls");
+    		declare hiter iter("h");
+    		h.defineKey("__obs");
+    		h.defineData(
+    			"__obs", "__id_ctrl", "__index_ctrl", "__start_ctrl", "__end_ctrl"
+    			);
+    		h.defineDone();
+    		call missing(__obs, __id_ctrl, __index_ctrl, __start_ctrl, __end_ctrl);
 
-      /* make match id. We need this later while restructuring the matched datat
-      to handles cases wher the same person is included multiple times as a case
-      in the same match_on strata. */
-      __match_id = 0; 
+        /* Initalize a match id variable */
+        __match_id = 0; 
 
-      /* formula from link in start of file */
-      retain __nobs __k __p __ite_max;
- 	    __nobs = h.num_items;
-      __k = __nobs;
-      __p = 0.99;
-      __ite_max = min(round(__k*log(__k) - log(-log(__p))), &ite_max_val);
-      call symput("ite_max", __ite_max);
-  	end;
+        /* formula from link in start of file */
+        retain __nobs __k __p __max_attempts;
+   	    __nobs = h.num_items;
+        __k = __nobs;
+        __p = 0.99;
+        __max_attempts = min(
+          &n_controls * round(__k*(log(__k) - log(-log(__p)))), 
+          &max_tries
+        );
+        call symput("max_attempts", put(__max_attempts, best12.));
 
-    __match_id + 1;
+        /* Make variable to keep track of the actual max number of tries 
+        needed to find all &n_controls matches. */
+        retain __max_cnt;
+          __max_cnt = .;
+    	end;
 
-  	/* Open case dataset */
-  	set __hm_cases;
-  	
-  	/* Find the total number of potential controls*/
- 
-  	__stop = 0;
-  	__n = 0;
-  	__cnt = 0;
-  	do while (__stop = 0);
-  		__cnt+1;
-  		/* Pick a random potential control */
-  		__rc=h.find(key:max(1,round(rand("uniform")*__nobs)));
-  		/* Check if valid control */
-      if __id ne __id_control and __start_control <= __index <= __end_control
-        
-  		/* If the control is valid we add one to the counter 
-  		keeping track of the number of found valid controls
-  		and output the obervation */
-  		then do;
-  			__n+1; 
-        drop  __start_control __end_control __rc __obs __nobs __stop 
-              __n __cnt __k __p __ite_max;
-  			output;
-  		end;
-  		/* When we have found 10 valid controls we stop the loop */ 
-  		if __n = &n_matches then __stop = 1;
-  		/* Exit condition to avoid infinite loops. */
-      if __cnt >__ite_max then __stop = 1;
-    end;
-  run;
-  
+    	/* Open case dataset */
+    	set __hm_cases;
+
+      /* initialize utility variables */
+    	__stop = 0;
+    	__n = 0;
+    	__cnt = 0;
+      __match_id + 1;
+
+    	do while (__stop = 0);
+    		__cnt+1;
+    		/* Pick a random potential control */
+          __rand_obs = max(1, round(rand("uniform") * __nobs));
+      		__rc = h.find(key:__rand_obs);
+    		/* Check if key exists in hash table and if valid control */
+        if __rc = 0 and __id ne __id_ctrl
+          and __start_ctrl <= __index <= __end_ctrl
+          and (__index_ctrl = . or __index < __index_ctrl)     
+    		/* If the control is valid we add one to the counter 
+    		keeping track of the number of found valid controls
+    		and output the obervation */
+    		then do;
+    			__n+1; 	
+          /* If matching without replacemnt, remove matched control
+          from hash-table. */
+          %if &replace = n %then %do;
+            __rc = h.remove(key: __rand_obs);
+          %end;
+          /* Output matched control */
+          output __hm_matches;
+    		end;
+    		/* When we have found 10 valid controls we stop the loop */ 
+    		if __n = &n_controls then __stop = 1;
+    		/* Exit condition to avoid infinite loops. */
+        if __cnt > __max_attempts then __stop = 1;
+        /* If we have not found the wanted number of controls for a case
+        we output the id value to a dataset */
+        if __stop = 1 and __n < &n_controls then output __hm_not_full_matches_id;
+        if __stop = 1 then do;
+          /* Update maximum number of tries needed to find all controls */
+          __max_cnt = max(__cnt, __max_cnt);
+          call symput("max_cnt", put(__max_cnt, best12.));
+        end;
+      end;
+      keep __id_ctrl __index_ctrl __match_id __id __index __strata __n;
+    run;
   %end;
   /* Else make empty dataset */
   %else %do;
-  data __hm_match1_&i;
-    format __index_control date9. __match_id 10.;
-    set __hm_cases(obs = 0);
-    __id_control = __id;
-  run;
+    data __hm_matches;
+      format __index_ctrl __match_id best12.;
+      set __hm_cases(obs = 0);
+      __id_ctrl = __id;
+    run;
 
+    data __hm_not_full_matches_id;
+      set __hm_cases(keep = __id __strata __index);
+      __n = 0;
+    run;
   %end;
 
-  %put %sysfunc(time(), time12.) ite &i/%sysfunc(strip(&n_strata)) (%sysfunc(strip(&i_match_on))) / cases: %sysfunc(strip(&n_cases)) / pot. ctrls: %sysfunc(strip(&n_controls)) / ite_max: %sysfunc(strip(&ite_max));
+  /* Append matches from strata to dataset */
+  proc append base = __hm_all_matches1 data = __hm_matches;
+  run;
+
+  /* Append ids for which not all matches could be found */
+  proc append base = __hm_all_not_full_matches_id1
+      data = __hm_not_full_matches_id;
+  run;
+
+  %let strata_end = %sysfunc(datetime());
+  %let strata_time = %sysevalf(&strata_end - &strata_start);
+
+  %if &i = 1 %then %let strata_time_all = &strata_time;
+  %else %let strata_time_all = &strata_time_all, &strata_time;
+  %let strata_median = %sysfunc(median(&strata_time_all));
+  %let est_finish = 
+    %left(%qsysfunc(
+      putn(
+        %sysevalf(&strata_end + &strata_median * (&n_strata - &i)), 
+        datetime32.
+      )
+    ));
+
+  /* Make dataset with strata information */
+  %if &n_strata_cases  = 0 or &n_strata_controls = 0 %then %do;
+    %let max_attempts = .;
+    %let max_cnt = .;
+  %end;
+  data __hm_strata_info;
+    format __strata __n_cases __n_potential_controls best12. 
+           __start __end datetime32. __time_sec 20.2;
+    __strata = &i;
+    __n_cases = &n_strata_cases;
+    __n_potential_controls = &n_strata_controls;
+    __start = &strata_start;
+    __end = &strata_end;
+    __time_sec = &strata_time;
+    __max_attempts = &max_attempts;
+    __max_cnt = &max_cnt;
+  run;
+      
+  /* Append strata diagnostics */
+  proc append base = __hm_info1 data = __hm_strata_info;
+  run;
+  
+  /* Print progress information to the log */
+  %do j = 1 %to %sysfunc(countw(&points, $));
+    %let j_point = %scan(&points, &j, $);
+    %let j_pct = %scan(&progress, &j, $);
+    %if &i = &j_point %then %do;
+      %if &i ne &n_strata %then %do;
+        %put %sysfunc(datetime(), datetime32.): %str( &j_pct) (est. finish: &est_finish);
+      %end;
+      %else %do;
+        %put %sysfunc(datetime(), datetime32.): &j_pct (est. finish: &est_finish);
+      %end;
+    %end;
+  %end; /* End of j-loop */
 
 %end; /* End of i-loop */
-/* Restore the value of the NOTES option*/
+
+/* Restore value of NOTES option*/
 options &opt_notes_value;
 
-/* Combined matches */
-data __hm_match2;
-  set __hm_match1_:;
-run;
 
-/* Rearrange data */
-proc sort data = __hm_match2;
-  by __match_on __match_id __id __id_control;
+/******************************************************************************
+MAKE OUTPUT WITH MATCHED DATA
+******************************************************************************/
+%local i i_strata;
+
+proc sort data = __hm_all_matches1;
+  by __strata __match_id __id __id_ctrl;
 run;
 
 /* Cases */
-data __hm_match3_cases;
-	set __hm_match2(
+data __hm_all_matches2_cases;
+	set __hm_all_matches1(
     rename = (__match_id = temp) 
-    drop = __id_control __index_control
+    drop = __id_ctrl __index_ctrl
   );
 	length __match_id 8 __case 3;
 	format __match_id 10. __case 1.;
-	by __match_on temp;
+	by __strata temp;
 	retain __match_id;
 	if _n_ = 1 then __match_id = 0;
 	if first.temp then do;
@@ -302,49 +732,192 @@ data __hm_match3_cases;
 run;
 
 /* Controls */
-data __hm_match3_controls(
+data __hm_all_matches2_controls(
     rename = (
-      __id_control = __id 
-      __index_control = __index)
+      __id_ctrl = __id 
+      __index_ctrl = __index
+      )
   );
-	set __hm_match2(rename = (__match_id = temp));
+	set __hm_all_matches1(rename = (__match_id = temp));
 	length __match_id 8 __case 3;
 	format __match_id 10. __case 1.;
-	by __match_on temp;
+	by __strata temp;
 	retain __match_id;
 	if _n_ = 1 then __match_id = 0;
 	if first.temp then do;
 		__match_id = __match_id + 1;
 	end;	
 	__case = 0;
-  drop temp __id __index;
+  drop temp __id __index ;
 run;
 
 /* Combine */
-data __hm_match4;
-	set __hm_match3_cases __hm_match3_controls;
+data __hm_all_matches3;
+	set __hm_all_matches2_cases __hm_all_matches2_controls;
 run;
 
+/* merge with fu_start and fu_end variable info */
 proc sql;
-  create table &out_ds(
-      rename = (__index = &index_date __id = &id_var)    
-    ) as
-    select a.__match_id, a.__case, a.__id,a.__index
-      %do i = 1 %to %sysfunc(countw(&match_vars, %str( )));
-        %let i_var = %scan(&match_vars, &i, %str( )); 
-      , b.&i_var
+  create table __hm_all_matches4 as
+    select a.*, b.__start, b.__end
+      from __hm_all_matches3 as a
+      left join
+      __hm_data2(rename = (__strata = __temp)) as b
+      on a.__strata = b.__temp and a.__id = b.__id;
+quit;
+
+proc sql;
+  create table &out_pf._matches(
+      rename = (
+        __index = &index_var __id = &id_var   
+        __start = &fu_start
+        __end = &fu_end 
+    )) as
+    select 
+    %if &match_stratas ne __dummy_strata %then %do;
+      %do i = 1 %to %sysfunc(countw(&match_stratas, %str( )));
+        %let i_strata = %scan(&match_stratas, &i, %str( ));
+        b.&i_strata,
       %end;
-    from __hm_match4 as a
-    left join __hm_match_values as b
-    on a.__match_on = b.__match_on
+    %end;
+    a.__match_id, a.__case, a.__id, a.__start, a.__end, a.__index
+    from __hm_all_matches4 as a
+    left join __hm_stratas2 as b
+    on a.__strata = b.__strata
     order by __match_id, __case descending, a.__id;
 quit;
 
-%if &del = y %then %do;
-  proc datasets nolist nodetails;
+
+/******************************************************************************
+MAKE OUTPUT WITH INFO ON PERSON WITH NO/PARTIAL MATCHES
+******************************************************************************/
+%local i i_strata;
+
+proc sql;
+  create table __hm_all_not_full_matches_id2 as
+    select a.*, b.__start, b.__end
+      from __hm_all_not_full_matches_id1 as a
+      left join
+      __hm_data2(rename = (__strata = __temp)) as b
+      on a.__strata = b.__temp and a.__id = b.__id;
+quit;
+
+proc sql;
+  create table &out_pf._no_matches(
+      rename = (
+        __index = &index_var __id = &id_var   
+        __start = &fu_start
+        __end = &fu_end 
+    )) as
+    select
+    %if &match_stratas ne __dummy_strata %then %do;
+      %do i = 1 %to %sysfunc(countw(&match_stratas, %str( )));
+        %let i_strata = %scan(&match_stratas, &i, %str( ));
+        b.&i_strata,
+      %end;
+    %end;
+    a.__id, a.__start, a.__end, a.__index, a.__n label = "Number of matched controls"
+      from __hm_all_not_full_matches_id2 as a
+      left join
+      __hm_stratas2 as b
+      on a.__strata = b.__strata
+      order by a.__id;
+quit;
+
+
+/******************************************************************************
+MAKE OUTPUT WITH INFO
+******************************************************************************/
+
+/* Count times id used as control in each matched set in each strata, and then
+summarize distribution by percentiles. */
+proc means data = __hm_all_matches2_controls nway noprint;
+  class __strata __match_id __id;
+  output out = __hm_n_id_match_1(drop = _freq_ _type_) 
+    n(__strata) = n_id_match / noinherit;
+run;
+
+proc means data = __hm_n_id_match_1 nway noprint;
+  class __strata;
+  output out = __hm_n_id_match_2(drop = _freq_ _type_)
+    min(n_id_match) =
+    p25(n_id_match) = 
+    p50(n_id_match) =
+    p75(n_id_match) =
+    max(n_id_match) = / noinherit autoname;
+run;
+
+/* Count times id used as control in each strata. Summarize distribution
+by percentiles. */
+proc means data = __hm_n_id_match_1 nway noprint;
+  class __strata __id;
+  output out = __hm_n_id_strata_1(drop = _freq_ _type_) 
+    sum(n_id_match) = n_id_strata / noinherit;
+quit;
+
+proc means data = __hm_n_id_strata_1 nway noprint;
+  class __strata;
+  output out = __hm_n_id_strata_2(drop = _freq_ _type_)
+    min(n_id_strata) =
+    p25(n_id_strata) = 
+    p50(n_id_strata) =
+    p75(n_id_strata) =
+    max(n_id_strata) = / noinherit autoname;
+run;
+
+/* find info on how many matches were made */
+data __hm_n_no_matches1;
+  set __hm_all_not_full_matches_id1;
+  partial_match  = (__n > 0);
+  no_match = (partial_match = 0);
+run;
+
+proc means data = __hm_n_no_matches1 noprint nway;
+  class __strata;
+  output out = __hm_n_no_matches2(drop = _type_ _freq_)
+    sum(partial_match no_match) = n_partial_match n_no_match
+    / noinherit autoname;   
+run;
+
+data __hm_info2;
+  merge __hm_info1 __hm_n_no_matches2;
+  by __strata;
+  if n_partial_match = . then n_partial_match = 0;
+  if n_no_match = . then n_no_match = 0;
+  n_full_match = __n_cases - n_partial_match - n_no_match;
+run;
+
+data &out_pf._info;
+  merge __hm_stratas2 
+        __hm_info2 
+        __hm_n_id_match_2 
+        __hm_n_id_strata_2;
+  drop __strata __start __end 
+      %if &match_stratas = __dummy_strata %then %do; __dummy_strata %end; 
+      ;
+  label 
+    __n_cases = "Number of cases"
+    __n_potential_controls = "Number of potential controls"
+    __time_sec = "Run-time in seconds"
+    __max_attempts = "Maximum attempts to find all matches for a case"
+    __max_cnt = "Actual largest needed attempts needed to find all matches for a case"
+    n_partial_match = "Number of cases where only a partial amount of controls could be found"
+    n_no_match = "Number of cases for which no controls could be found"
+    n_full_match = "Number of cases for which all controls could be found"
+  ;
+run;
+
+
+%end_of_macro:
+
+
+/* Delete temporary datasets created by the macro, also when 
+"del" has not be specified as either y or n. */
+%if &del ne n  %then %do;
+  proc datasets nodetails nolist;
     delete __hm_:;
   run;
   quit;
-%end;
+%end; 
 
 %mend hash_match;
