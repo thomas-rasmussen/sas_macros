@@ -3,7 +3,7 @@ EXAMPLE - INTENDED USE WITH PROC REPORT
 *******************************************************************************/
 
 /* Example of intended use of the macro with proc report, to make a standard
-"table1" of a population with patient characteristics of the whole population
+"table 1" of a population with patient characteristics of the whole population
 and in stratas of an exposure variable. */
 
 data studypop;
@@ -43,7 +43,7 @@ proc format;
 run;
 
 ods escapechar = "^";
-ods rtf file = "S:\Thomas Rasmussen\github_dev\pt_char\example.rtf"
+ods rtf file = "S:\Thomas Rasmussen\macros\pt_char\example.rtf"
   style = journal ;
 proc report data = table1 missing
     style(report) = {font_size = 14pt}
@@ -61,7 +61,7 @@ ods listing;
 
 
 /*******************************************************************************
-EXAMPLE - MANUEL SPECIFICATION OF VARIABLE TYPES
+EXAMPLE - MANUAL SPECIFICATION OF VARIABLE TYPES
 *******************************************************************************/
 
 /* In some cases the macro can not correctly guess the types of variables in
@@ -80,7 +80,7 @@ run;
 
 /* If only cat_many_groups is of interest, we can see that the default 
 behavior of the macro treats the variable as a continuous variable. In this
-case, we can redemy the situation by fine-tuning the algorithm used to guess
+case, we can remedy the situation by fine-tuning the algorithm used to guess
 the type of the variable by using the "cat_groups_max" macro parameter. */
 %pt_char(
 	in_ds = studypop,
@@ -97,8 +97,7 @@ the type of the variable by using the "cat_groups_max" macro parameter. */
 /* But if we simultaneously want to include cont_few_values this solution
 will not work. Futhermore, cat_bin_values can not be properly recognized
 as a categorical variable no matter the value of "cat_groups_max". Instead,
-we specify the variable types of each variable manually using "var_types",
-and at the same time */
+we specify the variable types of each variable manually using "var_types". */
 %pt_char(
 	in_ds = studypop,
   out_ds = table1,
