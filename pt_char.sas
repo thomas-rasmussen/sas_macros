@@ -1,7 +1,7 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.2.0
-DATE:       2020-01-11
+VERSION:    0.2.1
+DATE:       2020-03-28
 LICENCE:    Creative Commons CC0 1.0 Universal  
             (https://www.tldrlegal.com/l/cc0-1.0)
 ********************************************************************************
@@ -31,6 +31,10 @@ Version 0.2.0 - List of changes (not exhaustive):
   strata, and by, the macro would break down.
 - It is now possible to choose what statistics to calculate for each separate
   variable in var_list using the var_stats macro parameter.
+Version 0.2.1
+- Fixed a bug where the macro would fail if both the strata and the weight
+  macro parameters were used.
+- Included a few more tests.
 ********************************************************************************
 PARAMETERS:
 *** REQUIRED ***
@@ -54,7 +58,8 @@ out_ds:           (libname.)member-name of output dataset or a filepath enclosed
                   provided, an overall strata is also added.
 var_list:         List of patient characteristic variables.     
 *** OPTIONAL ***
-by:               Space-separated list of by variables
+by:               Space-separated list of by variables. Input data does not
+                  need to be sorted according to the specified by-variables. 
 strata:           Stratification variable. Overall strata is added to data.
                   Can not contain missing values / empty strings as these are 
                   used to denote overall stratas. A stratification variable
@@ -574,11 +579,13 @@ number . */
   proc sql noprint;
     select  %if %lowcase(&strata) ne null %then %do; nmiss(&strata) %end;
             %if %lowcase(&weight) ne null %then %do;
+            %if %lowcase(&weight) ne null and %lowcase(&strata) ne null %then %do; , %end;
             nmiss(&weight), 
             min(&weight)
             %end;
       into  %if %lowcase(&strata) ne null %then %do; :strata_nmiss %end;
             %if %lowcase(&weight) ne null %then %do;
+            %if %lowcase(&weight) ne null and %lowcase(&strata) ne null %then %do; , %end;
             :weight_nmiss, 
             :weight_min
             %end;
