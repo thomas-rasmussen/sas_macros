@@ -70,8 +70,7 @@ run;
 %mend test1;
 %test1;
 
-
-/* Check incorrect use of quotes can be handled. */
+/* Check unintended use of quotes can be handled. */
 %pt_char(
   in_ds           = __data1,
   out_ds          = __out1,
@@ -100,7 +99,7 @@ run;
   del             = "y"
 );
 
-/* Check incorrect use of uppercase can be handled. */
+/* Check unintended use of uppercase can be handled. */
 %pt_char(
   in_ds           = __data1,
   out_ds          = __out1,
@@ -140,7 +139,7 @@ run;
 
 /* Check input/output datasets given as libname.member-name or as a 
 filepath works as intended. */
-libname __test "S:\Thomas Rasmussen\github_dev\pt_char";
+libname __test "S:\Thomas Rasmussen\macros\pt_char";
 data __test.__data1;
   set __data1;
 run;
@@ -152,8 +151,8 @@ run;
   );
 
 %pt_char(
-  in_ds     = "S:\Thomas Rasmussen\github_dev\pt_char\__data1.sas7bdat", 
-  out_ds    = "S:\Thomas Rasmussen\github_dev\pt_char\__out1.sas7bdat", 
+  in_ds     = "S:\Thomas Rasmussen\macros\pt_char\__data1.sas7bdat", 
+  out_ds    = "S:\Thomas Rasmussen\macros\pt_char\__out1.sas7bdat", 
   var_list  = bin_var
   );
 
@@ -206,6 +205,7 @@ correctly specified. */
 %pt_char(in_ds = __data1, out_ds = __out1, var_list = bin_var, strata = strata_max_sas_name_length_01234);
 %pt_char(in_ds = __data1, out_ds = __out1, var_list = bin_var, strata = null);
 %pt_char(in_ds = __data1, out_ds = __out1, var_list = bin_var, strata = by_char);
+%pt_char(in_ds = __data1, out_ds = __out1, var_list = bin_var, strata = strata_num, weight = weight_num);
 
 
 
