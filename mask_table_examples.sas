@@ -75,7 +75,7 @@ run;
 
   %let vars = n &vars;
 
-  /* Restucture data */
+  /* Restucture data */ 
   data manual4;
     format var_name var_value $50.;
     set manual3;
