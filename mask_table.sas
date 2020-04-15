@@ -1,7 +1,7 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.1.0
-DATE:       2020-02-12
+VERSION:    0.1.1
+DATE:       2020-04-15
 LICENCE:    Creative Commons CC0 1.0 Universal  
             (https://www.tldrlegal.com/l/cc0-1.0)
 ********************************************************************************
@@ -50,6 +50,10 @@ macro. Default macro parameters are set to facilitate the use of this macro in
 connection with the pt_char macro, but if the table data if not output from 
 pt_char it might still be easy to modify it so that it can be used with the
 macro. See examples. 
+
+Version 0.1.1:
+Changed how counts close to n_value are masked so that if all values are the
+same, masking is not performed. 
 ********************************************************************************
 PARAMETERS:
 *** REQUIRED ***
@@ -91,7 +95,7 @@ mask_avg:   Average to use in algorithm. Default is mask_avg = 1, ie if the
             mean value of the masked counts is less than or equal to 1, then
             an additional count is masked until the mean is larger than one.
 mask_big:   Should large counts close to n_value also be considered person-
-            sensitive, ie if count >= n_value - mask_max?
+            sensitive, ie if count <= n_value - mask_max < count?
             - No: mask_big = n
             - Yes: mark_large = y (default)
 ite_max:    Maximum number of masking algorithm iterations across the 
@@ -147,7 +151,7 @@ the "where" macro parameter. */
 %end;
 
 /* Remove single and double quotes from macro parameters where they are not 
-supposed to be used, but might have been used anyway´. */
+supposed to be used, but might have been used anywayÂ´. */
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
   %if (&i_var in where n_value cont_vars) = 0 %then %do;
@@ -827,7 +831,7 @@ a more natural way to do this ?*/
 %if &mask_big = y %then %do;
   data __mt_data7;
     set __mt_data7;
-    if __mt_var_id ne &n_value and __mt_cnt_masked >= __mt_n - &mask_max 
+    if __mt_var_id ne &n_value and __mt_n - &mask_max <= __mt_cnt_masked < __mt_n 
       then __mt_cnt_masked = .m;
   run;
 %end;
