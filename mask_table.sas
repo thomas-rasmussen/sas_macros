@@ -39,21 +39,8 @@ can include counts of numerous variables, identified using a
 each value of any categorical variables). See mask_table_examples file for 
 examples of the exact structure the input data must have.
 
-Find the newest version of the macro and accompanying examples and tests at:
+Accompanying examples and tests, version notes etc. can be found at:
 https://github.com/thomas-rasmussen/sas_macros
-********************************************************************************
-NOTES:
-Version 0.1.0:
-- First attempt of generalized implementation of masking algorithm. So far the 
-macro expects input data with the same structure as the output from the pt_char 
-macro. Default macro parameters are set to facilitate the use of this macro in 
-connection with the pt_char macro, but if the table data if not output from 
-pt_char it might still be easy to modify it so that it can be used with the
-macro. See examples. 
-
-Version 0.1.1:
-Changed how counts close to n_value are masked so that if all values are the
-same, masking is not performed. 
 ********************************************************************************
 PARAMETERS:
 *** REQUIRED ***

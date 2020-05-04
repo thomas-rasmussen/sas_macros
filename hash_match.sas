@@ -15,15 +15,8 @@ and events.
 - Date, if any, the person becomes a case (exposed).
 - Information on matching variables. 
 
-Find the newest version of the macro and accompanying examples and tests at:
+Accompanying examples and tests, version notes etc. can be found at:
 https://github.com/thomas-rasmussen/sas_macros
-********************************************************************************
-NOTES:
-Version 0.1.0:
-- First initial attempt at making macro using a hash-table merge to do matching.
-  Should work as intended, but should be used with caution.
-Version 0.2.0: 
-- Further development of the macro. 
 ********************************************************************************
 PARAMETERS:
 *** REQUIRED ***

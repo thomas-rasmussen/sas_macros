@@ -13,28 +13,8 @@ output dataset is intended to be used with proc report.
   
 Developed using SAS 9.4.
 
-Find the newest version of the macro and accompanying examples at:
+Accompanying examples and tests, version notes etc. can be found at:
 https://github.com/thomas-rasmussen/sas_macros
-********************************************************************************
-NOTES:
-Version 0.2.0 - List of changes (not exhaustive):
-- Changed version numbering to reflect that the macro is still under active
-  development and most changes will likely not be backwards-compatible.
-  This change will hopefully not cause too much confusion. Few people (if any) 
-  are using the macro at this point.
-- Extensive renaming of macro parameters to (hopefully) make the macro more
-  intuitive to understand and use.
-- Added a macro parameter controlling whether or not percentage signs are 
-  included for percentage statistics in the output.
-- Added a where-condition.
-- Fixed a bug, where if a variable was included in more than one of var_list,
-  strata, and by, the macro would break down.
-- It is now possible to choose what statistics to calculate for each separate
-  variable in var_list using the var_stats macro parameter.
-Version 0.2.1
-- Fixed a bug where the macro would fail if both the strata and the weight
-  macro parameters were used.
-- Included a few more tests.
 ********************************************************************************
 PARAMETERS:
 *** REQUIRED ***

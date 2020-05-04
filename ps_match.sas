@@ -2,11 +2,11 @@
 *	AUTHOR:       Thomas Bøjer Rasmussen (TBR)
 * VERSION:      1.0
 * DATE:         2019-03-07
-********************************************************************************
-* NOTES:        
-* This macro can be freely used and distributed and comes with NO WARRENTY!
-* 
-* Version 1.0: First version. Based on macros used in previous projects.
+* LICENCE:      Creative Commons CC0 1.0 Universal  
+*               (https://www.tldrlegal.com/l/cc0-1.0)
+*
+* Accompanying examples and tests, version notes etc. can be found at:
+* https://github.com/thomas-rasmussen/sas_macros
 ********************************************************************************
 *	DESCRIPTION:
 *	The macro performs efficient propensity score (PS) pair matching using 

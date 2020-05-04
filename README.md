@@ -1,2 +1,82 @@
-# sas_macros
-SAS macros and accompaning examples and tests.
+# SAS macros
+
+A collection of SAS macros with accompanying examples and tests. 
+
+
+## hash_match
+
+Matching using a hash-table merge approach
+
+### Version 0.2.0
+
+Further development of the macro. 
+
+### Version 0.1.0
+
+First initial attempt at making macro using a hash-table merge to do matching.
+Should work as intended, but should be used with caution.
+
+
+## mask_table
+
+Masks/suppresses/censors a table of aggregated counts, if the table contains
+counts that are deemed person-sensitive.
+
+### Version 0.1.1
+
+Refined how masking of large counts are done. 
+
+### Version 0.1.0
+
+First attempt of generalized implementation of masking algorithm. So far the 
+macro expects input data with the same structure as the output from the pt_char 
+macro. Default macro parameters are set to facilitate the use of this macro in 
+connection with the pt_char macro, but if the table data if not output from 
+pt_char it might still be easy to modify it so that it can be used with the
+macro. See examples. 
+
+
+## ps_match
+
+Efficient propensity score pair matching using a hash-table merge.
+
+### Version 1.0.0 
+
+First version. Based on macros used in previous projects.
+
+
+## pt_char
+
+### Version 0.2.1
+
+- Fixed a bug where the macro would fail if both the strata and the weight
+  macro parameters were used.
+  
+- Included a few more tests.
+
+### Version 0.2.0 
+
+- Changed version numbering to reflect that the macro is still under active
+  development and most changes will likely not be backwards-compatible.
+  This change will hopefully not cause too much confusion. Few people (if any) 
+  are using the macro at this point.
+  
+- Extensive renaming of macro parameters to (hopefully) make the macro more
+  intuitive to understand and use.
+  
+- Added a macro parameter controlling whether or not percentage signs are 
+  included for percentage statistics in the output.
+  
+- Added a where-condition.
+
+- Fixed a bug, where if a variable was included in more than one of var_list,
+  strata, and by, the macro would break down.
+  
+- It is now possible to choose what statistics to calculate for each separate
+  variable in var_list using the var_stats macro parameter.
+  
+
+
+# Contributors
+
+David Nagy (divaDseidnA)
