@@ -47,6 +47,8 @@ First version. Based on macros used in previous projects.
 
 ## pt_char
 
+Produces a so-called "table 1" with aggregated patient characteristics
+
 **Version 0.2.1**
 
 - Fixed a bug where the macro would fail if both the strata and the weight
