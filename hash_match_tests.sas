@@ -54,7 +54,7 @@ run;
 
 %macro test1;
 %let opt_vars = match_vars n_controls replace by max_tries 
-                ctrl_until_case seed del;              
+                ctrl_until_case seed print_notes del;              
 
 %do i = 1 %to %sysfunc(countw(&opt_vars, %str( )));
   %let i_var = %scan(&opt_vars, &i, %str( ));
@@ -419,6 +419,161 @@ run;
   del = invalid
 );
 
+/*** print_notes tests ***/
+
+option notes;
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  print_notes = invalid
+);
+
+option notes;
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  print_notes = y
+);
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  print_notes = n
+);
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  print_notes = N
+);
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  print_notes = "N"
+);
+
+option nonotes;
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  print_notes = y
+);
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  print_notes = "Y"
+);
+
+option notes;
+
+
+/*** verbose tests ***/
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  verbose = invalid
+);
+
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  verbose = y
+);
+
+/*** keep_add_vars tests ***/
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  keep_add_vars = match_char,
+  verbose = y
+);
+
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  keep_add_vars = match_char index_var,
+  verbose = y
+);
+
+/* Check macro correctly handles unnecesarily
+added variables. */
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  keep_add_vars = match_char index_var,
+  verbose = y
+);
+
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  keep_add_vars = match_char _null_,
+  verbose = y
+);
+
+/* check that keep_add_vars = _all_ is
+correctly handled */
+%hash_match(
+  in_ds = __data1, 
+  out_pf = __out1, 
+  id_var = id_char, 
+  index_var = index_var,
+  fu_start = fu_start,
+  fu_end = fu_end,
+  keep_add_vars = _all_,
+  verbose = y
+);
+
 
 /*******************************************************************************
 CHECK THAT MACRO FIND VALID MATCHES AS INTENDED
@@ -493,6 +648,7 @@ run;
   fu_end = end,
   by = by
 );
+
 data __data2;
   by = 1; id_num = 1; start = 1; end = 2; index =.; output;
   by = 2; id_num = 1; start = 1; end = 2; index =.; output;

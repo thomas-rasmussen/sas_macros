@@ -1,7 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.2.0
-DATE:       2020-01-20
+VERSION:    0.2.1
 LICENCE:    Creative Commons CC0 1.0 Universal  
             (https://www.tldrlegal.com/l/cc0-1.0)
 ********************************************************************************
@@ -12,8 +11,11 @@ be a source population with the following information on each person:
 - Start and end of follow-up period where the person is eligible to be a 
 case/control (exposed/unexposed) and free of whatever other relevant diseases 
 and events.
-- Date, if any, the person becomes a case (exposed).
-- Information on matching variables. 
+- Index date. Date the person becomes a case (exposed). 
+- Information on any matching variables. 
+
+Matching is done for each case on the date they become cases,
+ie on the index date.
 
 Accompanying examples and tests, version notes etc. can be found at:
 https://github.com/thomas-rasmussen/sas_macros
@@ -23,42 +25,43 @@ PARAMETERS:
 in_ds:            (libname.)member-name of input dataset on source population.         
 out_pf:           (libname.)member-name prefix of output datasets. The following
                   datasets are created by the macro:
-                  &out_pdf._matches: Matched population.
-                  &out_pdf._no_matches: Information on cases for which no or 
-                  only some of the wanted matches could be found.
-                  &out_pdf._info: Miscellaneous helpful information and 
+                  <out_pdf>_matches: Matched population.
+                  <out_pdf>_no_matches: Information on cases for which 
+                  no (or only partial) matches could be found.
+                  <out_pdf>_info: Miscellaneous helpful information and 
                   diagnostics that can be helpful to evaluate the 
-                  appropriateness of the matched cohrot.
-id_var:           Person id variable. Missing values not allowed. Must
-                  be unique in stratas defined by variables given in "by". 
-fu_start:         Start of follow-up variable. Must be a numeric variable.
+                  appropriateness of the matched cohort.
+id_var:           Person id. Missing values not allowed. Must
+                  be unique in stratas defined by variables given in <by>. 
+fu_start:         Start of follow-up. Must be a numeric variable.
                   Missing values not allowed.
-fu_end:           End of follow-up variable. Must be a numeric variable.
+fu_end:           End of follow-up. Must be a numeric variable.
                   Missing values not allowed.
-                  fu_end must also fullfil fu_start <= fu_end.
-index_var:        Variable with date, if any, the person becomes a 
-                  case. Must be a numeric variable.
+                  fu_end must also fullfil <fu_start> <= <fu_end>.
+index_var:        Date, if any, the person becomes a case. Must be a 
+                  numeric variable.
 *** OPTIONAL ***
 match_vars:       Space-separated list of matching variables. Default is 
-                  match_vars = null, ie no matching variables are used. 
+                  match_vars = _null_, ie no matching variables are used. 
 n_controls:       Number of controls to match to each case. 
                   Default is n_controls = 10.
 replace:          Match with replacement:
                   - Yes: replace = y (default)
-                  - No: replace = n  
+                  - No:  replace = n  
 where:            Condition used to to restrict the input dataset in a where-
                   statement, eg where = %str(var = "value"). 
-by:               Space-separated list of by variables. Default is by = null,
+by:               Space-separated list of by variables. Default is by = _null_,
                   ie no by variables. 
 max_tries:        The number of tries used to find all matches for each
-                  case is
-                  n = min(&n_controls * n_99pct, &max_tries)
-                  where n_99pct = round(k*[log(k)- ln(-ln(p))]), p = 0.99
+                  case is defined as
+                    n = min(<n_controls> * n_99pct, <max_tries>)
+                  where 
+                    n_99pct = round(k*[log(k)- ln(-ln(p))]), p = 0.99
                   is the approximate number of tries needed to have a 
                   99% probability (p), to have tried all potential controls (k).
-                  We multiply this approximate number with &n_matches, since
+                  We multiply this approximate number with <n_matches>, since
                   we want to be reasonably sure we can find all the matches we
-                  want, and we take the minimum of this number and &max_tries,
+                  want, and we take the minimum of this number and <max_tries>,
                   to set a limit for very large stratas. 
                   Default is max_tries = 10**6. 
                   n_99pct formula is from 
@@ -67,8 +70,23 @@ max_tries:        The number of tries used to find all matches for each
                   n-trials.
 ctrl_until_case:  Are cases allowed to be controls until they become cases:
                   - Yes: ctrl_until_case = y (default)
-                  - No: ctrl_until_case = n
-seed:             Seed used for random number generation. Default is seed = 0.
+                  - No:  ctrl_until_case = n
+keep_add_vars:    Space-separated list of additional variables from the input 
+                  to include in the <out_pf>_matches output dataset. Variables 
+                  specified in the required macro parameters are automatically 
+                  kept and does not need to be specified. All variables from
+                  the input dataset can be kept using keep_add_vars = _all_.
+                  Default is keep_add_vars = _null_, ie keep no additional 
+                  variables.
+seed:             Seed used for random number generation. Default is seed = 0,
+                  ie a random non-reproducible seed is used.
+print_notes:      Print notes in log?
+                  - Yes: print_notes = y
+                  - No:  print_notes = n (default)
+verbose:          Print info on what is happening during macro execution
+                  to the log:
+                  - Yes: verbose = y
+                  - No:  verbose = n (default)
 del:              Delete intermediate datasets created by the macro:
                   - Yes: del = y (default)
                   - no:  del = n              
@@ -80,26 +98,37 @@ del:              Delete intermediate datasets created by the macro:
   fu_start        = ,
   fu_end          = ,
   index_var       = ,
-  match_vars      = null,
+  match_vars      = _null_,
   n_controls      = 10,
   replace         = y,
   where           = %str(),
-  by              = null,
+  by              = _null_,
   max_tries       = 10**6,
   ctrl_until_case = y,
+  keep_add_vars   = _null_,
   seed            = 0,
+  print_notes     = n,
+  verbose         = n,
   del             = y
 ) / minoperator mindelimiter = ' ';
 
+%put hash_match: start execution;
+
+%local opt_notes;
+/* Find value of notes option, save it, then change then disable
+notes during parameter checks. */
+%let opt_notes = %sysfunc(getoption(notes));
+options nonotes;
 
 /*******************************************************************************
 INPUT PARAMETER CHECKS 
 *******************************************************************************/
-%local  vars i i_var j j_var ds_id rc var_vt;
+%local  vars i i_var j j_var ds_id rc var_vt tmp_keep_add_vars;
 
 %let vars = 
   in_ds out_pf id_var index_var match_vars fu_start fu_end where by 
-  ctrl_until_case replace n_controls max_tries seed del;               
+  ctrl_until_case keep_add_vars replace n_controls max_tries seed 
+  print_notes verbose del;               
 
 /* Check that none of the macro parameters are empty (except possibly where). */
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
@@ -111,7 +140,7 @@ INPUT PARAMETER CHECKS
 %end;
  
 /* Remove single and double quotes from macro parameters where they are not 
-supposed to be used, but might have been used anyway´. */
+supposed to be used, but might have been used anyway. */
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
   %if (&i_var in where ) = 0 %then %do;
@@ -121,38 +150,61 @@ supposed to be used, but might have been used anyway´. */
 %end;
 
 /* Make sure all relevant macro parameter values are in lowercase. */
-%let vars = ctrl_until_case replace del;
+%let vars = ctrl_until_case replace print_notes del;
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
   %let &i_var = %lowcase(&&&i_var);
+%end;
+
+
+/* ctrl_until_case, replace, print_notes, verbose 
+and del checks */
+
+/* Check that y/n macro parameters are specified correctly */
+%let vars = ctrl_until_case replace print_notes verbose del;            
+%do i = 1 %to %sysfunc(countw(&vars, %str( )));
+  %let i_var = %scan(&vars, &i, %str( ));
+  %if %eval(&&&i_var in n y) = 0 %then %do;
+    %put ERROR: "&i_var" does not have a valid value!;
+    %goto end_of_macro;
+  %end;
+%end;
+
+/* Enable notes if specified*/
+%if &print_notes = y %then %do; 
+  options notes;
+%end;         
+ 
+%if &verbose = y %then %do;
+  %put hash_match: *** Input checks ***;
 %end;
 
 /* Check that all specified variable names are valid, exists in the input
 dataset, and that none of the specified variables have a "__" prefix. 
 Note that "dummy" has been included in %qsubstr call so that the scenario
 of one variable with a very short name can be handles correctly. */
-%let vars = id_var index_var fu_start fu_end match_vars by;
+%let vars = id_var index_var fu_start fu_end match_vars by keep_add_vars;
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
   %do j = 1 %to %sysfunc(countw(&&&i_var, %str( )));
     %let j_var = %scan(&&&i_var, &j, %str( ));
     %if %sysfunc(nvalid(&j_var)) = 0 %then %do;
-      %put ERROR: Variable "&j_var" specified in "&i_var = &&&i_var";
+      %put ERROR: Variable "&j_var" specified in "&i_var";
       %put ERROR: is not a valid SAS variable name!;
       %goto end_of_macro;
     %end;
-    %if %lowcase(&j_var) ne null %then %do;
+    %if (%lowcase(&j_var) in _null_ _all_) = 0 %then %do;
       %let ds_id = %sysfunc(open(&in_ds));
       %if %sysfunc(varnum(&ds_id, &j_var)) = 0 %then %do;
         %let rc = %sysfunc(close(&ds_id));
-        %put ERROR: Variable "&j_var" specified in "&i_var = &&&i_var" does;
-        %put ERROR: not exist in the input dataset "in_ds = &in_ds"!;
+        %put ERROR: Variable "&j_var" specified in "&i_var" does;
+        %put ERROR: not exist in the input dataset "&in_ds"!;
         %goto end_of_macro; 
       %end;
     %end;
     %let rc = %sysfunc(close(&ds_id));
     %if %eval(%qsubstr(&j_var dummy, 1, 2) = __) %then %do;
-      %put ERROR: Variable "&j_var" specified in "&i_var = &&&i_var" has a "__" prefix;
+      %put ERROR: Variable "&j_var" specified in "&i_var" has a "__" prefix;
       %put ERROR: This is not allowed to make sure that input variables are not;
       %put ERROR: overwritten by temporary variables created by the macro!;
       %goto end_of_macro; 
@@ -165,7 +217,7 @@ of one variable with a very short name can be handles correctly. */
 
 /* Check input dataset exists. */
 %if %sysfunc(exist(&in_ds)) = 0 %then %do;
-  %put ERROR: Specified input dataset "in_ds = &in_ds" does not exist!;
+  %put ERROR: Specified "in_ds" dataset "&in_ds" does not exist!;
   %goto end_of_macro;
 %end;
 
@@ -173,7 +225,7 @@ of one variable with a very short name can be handles correctly. */
 %let ds_id = %sysfunc(open(&in_ds));
 %if  %sysfunc(attrn(&ds_id, nobs)) = 0 %then %do;
   %let rc = %sysfunc(close(&ds_id));
-  %put ERROR: Input dataset "in_ds = &in_ds" is empty!;
+  %put ERROR: Specified "in_ds" dataset "&in_ds" is empty!;
   %goto end_of_macro;
 %end;
 %let rc = %sysfunc(close(&ds_id));
@@ -192,7 +244,7 @@ with a letter or underscore, and is followed by 0-22 letters ,numbers or
 undrscores. The whole regular expression is case-insentitive. */
 %if %sysfunc(prxmatch('^([a-z][\w\d]{0,7}\.)*[\w][\w\d]{0,22}$', &out_pf)) = 0 
   %then %do;
-  %put ERROR: Output prefix (libname.)member-name prefix "out_pf = &out_pf" is;
+  %put ERROR: Specified "out_pf" output prefix "&out_pf" is;
   %put ERROR: either invalid or the member-name part has length greater than 23;
   %put ERROR: which is not allowed!;
   %goto end_of_macro; 
@@ -203,7 +255,7 @@ undrscores. The whole regular expression is case-insentitive. */
 
 /* Check only one variable specified in "id_var". */
 %if %eval(%sysfunc(countw(&id_var, %str( ))) > 1) %then %do;
-  %put ERROR: Only one variable can be specified in "id_var = &id_var"!;
+  %put ERROR: Only one variable can be specified in "id_var"!;
   %goto end_of_macro; 
 %end;
 
@@ -216,7 +268,7 @@ that the variable is numeric. */
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
   %if %eval(%sysfunc(countw(&&&i_var, %str( ))) > 1) %then %do;
-      %put ERROR: Only one variable can be specified in "&i_var = &&&i_var"!;
+      %put ERROR: Only one variable can be specified in "&i_var"!;
       %goto end_of_macro; 
   %end;
   data _null_;
@@ -224,7 +276,7 @@ that the variable is numeric. */
     call symput("var_vt", vtype(&&&i_var));  
   run;
   %if &var_vt ne N %then %do;
-    %put ERROR: The variable specified in "&i_var = &&&i_var" must be numeric!;
+    %put ERROR: The variable specified in "&i_var" must be numeric!;
     %goto end_of_macro;
   %end;
 %end; /* End of i-loop */
@@ -252,39 +304,95 @@ one or more digits (so that eg. 0 is not allowed, but 10 is) */
 
 /* Must be an integer */
 %if %sysfunc(prxmatch('^-*\d*$', &seed)) = 0 %then %do;
-  %put ERROR: "seed = &seed" must be an integer!;
+  %put ERROR: "seed" must be an integer!;
   %goto end_of_macro; 
 %end;
 
 
-/*** "ctrl_until_case", "replace", and "del" checks ***/
+/*** keep_add_vars checks ***/
 
-/* Check that y/n macro parameters are specified correctly */
-%let vars = ctrl_until_case replace del;            
-%do i = 1 %to %sysfunc(countw(&vars, %str( )));
-  %let i_var = %scan(&vars, &i, %str( ));
-  %if %eval(&&&i_var in n y) = 0 %then %do;
-    %put ERROR: "&i_var = &&&i_var" does not have a valid value!;
+%if &verbose = y %then %do;
+  %put hash_match: - Input value of "keep_add_vars": &keep_add_vars;
+%end;
+
+/* If more than one variable is specified, make sure that _null_ and/or
+_all_ are not among the specified variables. */
+%if %sysevalf(%sysfunc(countw(&keep_add_vars, %str( ))) > 1) %then %do;
+  %if (_all_ in %lowcase(&keep_add_vars)) or 
+      (_null_ in %lowcase(&keep_add_vars)) %then %do;
+    %put ERROR: A list of variables have been specified in "keep_add_vars";
+    %put ERROR: but the list contains one/both of the protected;
+    %put ERROR: values _null_ and _all_!;
     %goto end_of_macro;
   %end;
 %end;
-          
-                 
+
+/* If keep_add_vars = _all_ then replace with all variables input dataset.
+This will be automatically adjusted in the next step. */
+%if &keep_add_vars = _all_ %then %do;
+  data  __hm_empty;
+    set __data1(obs = 0);
+  run;
+
+  proc sql noprint;
+    select distinct name into :keep_add_vars separated by " "
+      from sashelp.vcolumn
+      where libname = "WORK" and memname = "__HM_EMPTY";
+  quit;
+%end;
+
+/* Check that if a list of variables are specified and already 
+automatically included variables are included in the list, that they are
+remove them from the list. */
+
+%let tmp_keep_add_vars = &keep_add_vars;
+%let keep_add_vars = ;
+%do i = 1 %to %sysfunc(countw(&tmp_keep_add_vars, %str( )));
+  %let i_var = %scan(&tmp_keep_add_vars, &i, %str( ));
+  %if (&i_var in &id_var &fu_start &fu_end &index_var &match_vars &by) = 0 
+    %then %let keep_add_vars = &keep_add_vars &i_var;
+%end;
+
+/* If the removal of redundant variables from the list results in the 
+macro variable being empty, set it to _null_ */
+%if &keep_add_vars = %then %let keep_add_vars = _null_;
+
+%if &verbose = y %then %do;
+  %put hash_match: - Value of "keep_add_vars" after checks: &keep_add_vars;
+%end;
+
+%if &verbose = y %then %do;
+  %put hash_match: - All initial input checks completed;
+%end;
+
 /******************************************************************************
 LOAD INPUT DATA
 ******************************************************************************/
+
 %local match_stratas;
 
+%if &verbose = y %then %do;
+  %put hash_match: *** Load input data ***;
+  %put hash_match: - Creating macro variable "match_stratas" including all;
+  %put hash_match:   variables given in "match_vars" and "by";
+%end;
 /* The stratas in which we will do matching is defined by the variables given
 in &match_vars and &by. */
 %let match_stratas = ;
-%if &match_vars ne null %then %let match_stratas = &match_vars;
-%if &by ne null %then %let match_stratas = &match_stratas &by;
+%if &by ne _null_ %then %let match_stratas = &match_stratas &by;
+%if &match_vars ne _null_ %then %let match_stratas = &match_stratas &match_vars;
 
 /* If no matching or by variables are given, we will create a dummy strata
 variable to facilitate the analyses. */
+%if &verbose = y and &match_stratas = %then %do;
+  %put hash_match: - No matching variables specified.;
+  %put hash_match:   Dummy matching variable __dummy_strata will be added;
+  %put hash_match:   to the input data and "match_stratas" to facilitate analyses.;
+%end;
 %if &match_stratas = %then %let match_stratas = __dummy_strata;
-
+%if &verbose = y %then %do;
+  %put hash_match: - match_stratas = &match_stratas; 
+%end;
 /* Load and restrict input data, and rename variables to facilitate the
 analyses*/
 data __hm_data1(rename = (
@@ -296,7 +404,7 @@ data __hm_data1(rename = (
   set &in_ds;
   where &where;
   %if &match_stratas = __dummy_strata %then %do;
-    __dummy_strata = "null";
+    __dummy_strata = "_null_";
   %end;
 run;
 
@@ -304,11 +412,20 @@ run;
 the macro is terminated. */
 %if &syserr ne 0 %then %do;
   %put ERROR- The specified "where" condition:;
-  %put ERROR- "where = &where";
+  %put ERROR- "&where";
   %put ERROR- produced a warning or an error. Macro terminated!;
   %goto end_of_macro; 
 %end;
 
+%if &verbose = y %then %do;
+  %put hash_match: - Input data succesfully loaded, where statement;
+  %put hash_match:   did not produce any warnings or errors.;
+  %put hash_match: - Renamed variables:;
+  %put hash_match:   &fu_start -> __start;
+  %put hash_match:   &fu_end -> __end;
+  %put hash_match:   &index_var -> __index;
+  %put hash_match:   &id_var -> __id;
+%end;
 
 /******************************************************************************
 CHECK INPUT DATA
@@ -317,9 +434,13 @@ CHECK INPUT DATA
 
 /* Check that __id values are unique (in stratas of by-variables values if
 specified). */
+%if &verbose = y %then %do;
+  %put hash_match: *** Check input data ***;
+  %put hash_match: - Checking that __id values are unique;
+%end;
 proc sort data = __hm_data1 nodupkeys 
-    dupout = __hm_dup_id(keep = %if &by ne null %then %do; &by %end; __id);
-  by %if &by ne null %then %do; &by %end; __id;
+    dupout = __hm_dup_id(keep = %if &by ne _null_ %then %do; &by %end; __id);
+  by %if &by ne _null_ %then %do; &by %end; __id;
 run;
 
 proc sql noprint;
@@ -329,15 +450,19 @@ proc sql noprint;
 quit;
 
 %if %sysevalf(&n_dups > 0) %then %do;
-  %put ERROR- id variable "id_var = &id_var" contain dublicate values!;
-  %if &by ne null %then %do;
-    %put ERROR- in one or more stratas defined by "by = &by".;
+  %put ERROR- id variable "id_var" contain dublicate values!;
+  %if &by ne _null_ %then %do;
+    %put ERROR- in one or more stratas defined by variables: &by..;
   %end;
   %goto end_of_macro;
 %end;
 
-/* Check that __id, __start __end does not contain missing values, and that
-__start <= __end for all persons. */
+/* Check that __id, __start, and __end does not contain missing values, and that
+__start <= __end for all ids. */
+%if &verbose = y %then %do;
+  %put hash_match: - Checking that __id, __start, and __end does not contain;
+  %put hash_match:   missing values, and that __start <= __end for all ids;
+%end;
 data __hm_check_data1;
   set __hm_data1(keep = __start __end __id);
   __miss_id = missing(__id);
@@ -383,6 +508,13 @@ PREPARE DATA
 ******************************************************************************/
 %local i i_strata n_strata;
 
+%if &verbose = y %then %do;
+  %put hash_match: *** Prepare data for hash-table matching ***;
+  %put hash_match: - Creating a composite strata variable based on the unique;
+  %put hash_match:   combinations of the values of the variables:;
+  %put hash_match:     &match_stratas;
+%end;
+
 /* Find strata values and make a new composite strata variable. */
 proc sort data = __hm_data1(keep = &match_stratas) 
     out = __hm_stratas1 nodupkeys; 
@@ -399,10 +531,16 @@ proc sql noprint;
     from __hm_stratas2;
 quit;
 
+
 /* replace matching variables in data with the new composite strata variable.*/
+%if &verbose = y %then %do;
+  %put hash_match: - Replacing the specified matching/by variables;
+  %put hash_match:     &match_stratas;
+  %put hash_match:   with the composite variable __strata in the data;
+%end;
 proc sql;
   create table __hm_data2 as
-    select a.__id, a.__index, a.__start, a.__end, b.__strata
+    select a.*, b.__strata
       from __hm_data1 as a
       left join 
       __hm_stratas2 as b
@@ -419,11 +557,16 @@ proc sql;
   ;
 quit;
 
-/* Sort data, and then create index. */
-proc sort data = __hm_data2 out = __hm_data2(index = (__strata));
+%if &verbose = y %then %do;
+  %put hash_match: - Sort data accoring to __strata, and create an index;
+  %put hash_match:   on __strata for fast subsetting of the data;
+%end;
+/* Restrict and sort data, and then create index. */
+proc sort 
+    data = __hm_data2(keep = __id __index __start __end __strata) 
+    out = __hm_data3(index = (__strata));
 	by __strata;
 run;
-
 
 /******************************************************************************
 MATCH
@@ -434,6 +577,9 @@ MATCH
 
 /* Determine the points in the matching procedure where information is 
 printed to the log, based on the total number of stratas. */
+%if &verbose = y %then %do;
+  %put hash_match: *** Matching ***;
+%end;
 data __hm_progress_points;
   do i = 1 to 10;
     point = ceil(i * &n_strata / 10);
@@ -450,13 +596,11 @@ proc sql noprint;
     from __hm_progress_points;
 quit;
 
-/* Save value of the NOTES option in a macro variable so we can restore
-it later. */
-%let opt_notes_value = %sysfunc(getoption(notes));
+/* Disble notes in log */
 options nonotes;
 
-/* Make sure to delete certain possible dataset from a previous run of
-the macro in the work directory, before we do the matching. */
+/* Make sure there are no dataset from matching process from a previous run 
+of�the macro in the work directory, before we do the matching. */
 proc datasets nolist nodetails;
   delete __hm_data_strata __hm_cases __hm_potential_controls
          __hm_matches __hm_not_full_matches_id
@@ -474,7 +618,7 @@ quit;
     select type, length 
       into :&i_var._type, :&i_var._length
       from sashelp.vcolumn
-      where libname = "WORK" and memname = "__HM_DATA2"
+      where libname = "WORK" and memname = "__HM_DATA3"
         and name = "&i_var";
   quit;
   %let &i_var._type = %sysfunc(compress(&&&i_var._type));
@@ -494,7 +638,7 @@ quit;
 
   /* Restrict data strata. */
   data __hm_data_strata;
-    set __hm_data2;
+    set __hm_data3;
     where __strata = &i;
   run;
 
@@ -692,14 +836,18 @@ quit;
 
 %end; /* End of i-loop */
 
-/* Restore value of NOTES option*/
-options &opt_notes_value;
-
+%if &print_notes = y %then %do;
+  options notes;
+%end;
 
 /******************************************************************************
 MAKE OUTPUT WITH MATCHED DATA
 ******************************************************************************/
 %local i i_strata;
+
+%if &verbose = y %then %do;
+  %put hash_match: *** Make output dataset with matched data ***;
+%end;
 
 proc sort data = __hm_all_matches1;
   by __strata __match_id __id __id_ctrl;
@@ -744,16 +892,34 @@ data __hm_all_matches2_controls(
   drop temp __id __index ;
 run;
 
-/* Combine */
 data __hm_all_matches3;
 	set __hm_all_matches2_cases __hm_all_matches2_controls;
 run;
 
-/* merge with fu_start and fu_end variable info */
+proc sort data = __hm_all_matches3;
+  by __match_id descending __case;
+run;
+
+data __hm_all_matches4;
+  set __hm_all_matches3;
+  by __match_id;
+  format __match_date date9.;
+  retain __match_date;
+  if first.__match_id then __match_date = __index;
+run;
+
+/* merge variables back to matched data */
 proc sql;
-  create table __hm_all_matches4 as
-    select a.*, b.__start, b.__end
-      from __hm_all_matches3 as a
+  create table __hm_all_matches5 as
+    select a.__match_id, a.__match_date, a.__case, a.__id,
+           a.__index, a.__strata, b.__start, b.__end
+      %if &keep_add_vars ne _null_ %then %do;
+        %do i = 1 %to %sysfunc(countw(&keep_add_vars, %str( )));
+          %let i_var = %scan(&keep_add_vars, &i, %str( ));
+            ,b.&i_var
+        %end;
+      %end;
+      from __hm_all_matches4 as a
       left join
       __hm_data2(rename = (__strata = __temp)) as b
       on a.__strata = b.__temp and a.__id = b.__id;
@@ -764,8 +930,8 @@ proc sql;
       rename = (
         __index = &index_var __id = &id_var   
         __start = &fu_start
-        __end = &fu_end 
-    )) as
+        __end = &fu_end
+      ) drop = __strata) as
     select 
     %if &match_stratas ne __dummy_strata %then %do;
       %do i = 1 %to %sysfunc(countw(&match_stratas, %str( )));
@@ -773,8 +939,8 @@ proc sql;
         b.&i_strata,
       %end;
     %end;
-    a.__match_id, a.__case, a.__id, a.__start, a.__end, a.__index
-    from __hm_all_matches4 as a
+    a.*
+    from __hm_all_matches5 as a
     left join __hm_stratas2 as b
     on a.__strata = b.__strata
     order by __match_id, __case descending, a.__id;
@@ -785,6 +951,10 @@ quit;
 MAKE OUTPUT WITH INFO ON PERSON WITH NO/PARTIAL MATCHES
 ******************************************************************************/
 %local i i_strata;
+
+%if &verbose = y %then %do;
+  %put hash_match: *** Make output dataset with info on ids with no/partial matches ***;
+%end;
 
 proc sql;
   create table __hm_all_not_full_matches_id2 as
@@ -821,6 +991,10 @@ quit;
 /******************************************************************************
 MAKE OUTPUT WITH INFO
 ******************************************************************************/
+
+%if &verbose = y %then %do;
+  %put hash_match: *** Make output dataset with info ***;
+%end;
 
 /* Count times id used as control in each matched set in each strata, and then
 summarize distribution by percentiles. */
@@ -892,7 +1066,7 @@ data &out_pf._info;
     __n_cases = "Number of cases"
     __n_potential_controls = "Number of potential controls"
     __time_sec = "Run-time in seconds"
-    __max_attempts = "Maximum attempts to find all matches for a case"
+    __max_attempts = "Maximum attempts that will be attempted to find all matches for a case"
     __max_cnt = "Actual largest needed attempts needed to find all matches for a case"
     n_partial_match = "Number of cases where only a partial amount of controls could be found"
     n_no_match = "Number of cases for which no controls could be found"
@@ -912,5 +1086,10 @@ run;
   run;
   quit;
 %end; 
+
+/* Restore value of notes option */
+options &opt_notes;
+
+%put hash_match: end execution;
 
 %mend hash_match;

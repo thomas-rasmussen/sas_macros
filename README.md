@@ -7,6 +7,27 @@ A collection of SAS macros with accompanying examples and tests.
 
 Matching using a hash-table merge approach
 
+
+**Version 0.2.1**
+
+- Minor language and code revisions.
+
+- Macro parameter "print_notes" can now be used to toggle whether or not notes are 
+printed in the log. By default notes are now disabled. 
+
+- Added a verbose macro parameter that can be used to make the macro print what 
+is happening during macro execution to the log. This is primarily thought to be 
+useful during development and debugging, but it might also help the interested
+user to understand what is happening in the macro during execution.
+
+- Added macro parameter keep_add_vars, making it possible to specify variables from
+the input dataset that should be included in the output data that is not already
+automatically included.
+
+- Added a __match_date variable to the output, to make it more intuitive and
+explicit what the matching date is.
+  
+  
 **Version 0.2.0**
 
 Further development of the macro. 
@@ -15,6 +36,7 @@ Further development of the macro.
 
 First initial attempt at making macro using a hash-table merge to do matching.
 Should work as intended, but should be used with caution.
+
 
 
 ## mask_table
