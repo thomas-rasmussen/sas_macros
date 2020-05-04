@@ -7,11 +7,11 @@ A collection of SAS macros with accompanying examples and tests.
 
 Matching using a hash-table merge approach
 
-### Version 0.2.0
+**Version 0.2.0**
 
 Further development of the macro. 
 
-### Version 0.1.0
+**Version 0.1.0**
 
 First initial attempt at making macro using a hash-table merge to do matching.
 Should work as intended, but should be used with caution.
@@ -22,11 +22,11 @@ Should work as intended, but should be used with caution.
 Masks/suppresses/censors a table of aggregated counts, if the table contains
 counts that are deemed person-sensitive.
 
-### Version 0.1.1
+**Version 0.1.1**
 
 Refined how masking of large counts are done. 
 
-### Version 0.1.0
+**Version 0.1.0**
 
 First attempt of generalized implementation of masking algorithm. So far the 
 macro expects input data with the same structure as the output from the pt_char 
@@ -40,21 +40,21 @@ macro. See examples.
 
 Efficient propensity score pair matching using a hash-table merge.
 
-### Version 1.0.0 
+**Version 1.0.0**
 
 First version. Based on macros used in previous projects.
 
 
 ## pt_char
 
-### Version 0.2.1
+**Version 0.2.1**
 
 - Fixed a bug where the macro would fail if both the strata and the weight
   macro parameters were used.
   
 - Included a few more tests.
 
-### Version 0.2.0 
+**Version 0.2.0**
 
 - Changed version numbering to reflect that the macro is still under active
   development and most changes will likely not be backwards-compatible.
