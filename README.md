@@ -7,6 +7,14 @@ A collection of SAS macros with accompanying examples and tests.
 
 Matching using a hash-table merge approach
 
+**Version 0.3.0**
+
+- Inexact matching can now be done using the match_inexact parameter. As a 
+result of this new feature several things have changed that are not 
+backwards-compatible. See documentation and examples for how to use this new 
+version of the macro.
+
+
 
 **Version 0.2.1**
 
