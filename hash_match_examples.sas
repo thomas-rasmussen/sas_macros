@@ -30,6 +30,28 @@ data sourcepop;
   drop i;
 run;
 
+%hash_match(
+  in_ds           = sourcepop,
+  out_pf          = test,
+  match_date      = diag_date,
+  match_exact     = male,
+  match_inexact   = %str(
+                      abs(birth_year - _ctrl_birth_year) <= 2 
+                      and id ne _ctrl_id 
+                      and _ctrl_diag_date < diag_date
+                    ),
+  n_controls      = 10,
+  replace         = y,
+  keep_add_vars   = add_var1,
+  where           = %str(),
+  by              = _null_,
+  limit_tries     = 10**6,
+  seed            = 1,
+  print_notes     = y,
+  verbose         = y,
+  del             = n
+); 
+
 /* Finding matches for each case. The matching date is the day the case became a case.
 Matching is done on birth-year and sex. Cases an be used as controls for other cases, 
 if they are "diagnosis-free" at the time of matching. */

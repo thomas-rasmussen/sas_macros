@@ -17,7 +17,16 @@ and all variables specified in the other parameters?
 9) Include example showing that doing exact matching in the match_inexact 
 paramter leads to worse efficiency, at least with large datasets.
 10) dataset with partial matches, might not have id variable. Think about
-if this is realistic in practice. Wouldnt you always make a id ne __id cond?
+if this is realistic in practice. Wouldnt you always make a id ne __id cond? And
+if you didnt for some reason you wouldnt need the id anyway?
+11) __vars that are made make name collisions possible again. Need to make list
+of protected var names like obs, n etc. and chekc during inoput? 
+12) bliver nødt til at lave en __match_date fra start der er &match_date, så
+ting virker uanset om &match_date bruges i match_inexact eller ej.
+
+13) Ville de give mening at tilføje en warning hvis der er __hm_ prefix 
+datasæt i work directory? Med toggle til at slå fra?
+14) __match_date behøver ikke inkluderes i hash_table?
 */
 
 /*******************************************************************************
@@ -51,7 +60,7 @@ out_pf:           (libname.)member-name prefix of output datasets. The following
                   <out_pdf>_info: Miscellaneous information and 
                   diagnostics that can be helpful to evaluate the 
                   appropriateness of the matched population.
-match_date:       Date, if any, the person becomes a case and is matched with
+match_date:       Date, if any, the person/case is to be matched with
                   a set of controls. Must be a numeric variable.
 *** OPTIONAL ***
 match_exact:      Space-separated list of (exact) matching variables. Default 
@@ -59,12 +68,12 @@ match_exact:      Space-separated list of (exact) matching variables. Default
 match_inexact:    Inexact matching conditions. Use the %str function to 
                   specify conditions, eg. 
                   match_inexact = %str(
-                    abs(<var1> - __<var1>) <= 5 and <var2> ne __<var2>
+                    abs(<var1> - _ctrl_<var1>) <= 5 and <var2> ne _ctrl_<var2>
                   )
                   Here <var1> and <var2> are variables from the input dataset, 
-                  and __<var1> and __<var2> are variables created the by the 
+                  and _ctrl_<var1> and _ctrl_<var2> are variables created the by the 
                   macro. The <var> variables corresponds to case values, and 
-                  __<var> corresponds to (potnetial) control values.
+                  _ctrl_<var> corresponds to (potential) control values.
                   Default is match_inexact = %str(), eg no (inexact) matching 
                   conditions are specified.
 n_controls:       Number of controls to match to each case. 
@@ -139,6 +148,8 @@ del:              Delete intermediate datasets created by the macro:
 
 %put hash_match: start execution;
 
+%put %bquote(&match_inexact);
+
 /* find value of notes option, save it, then disable notes */
 %local opt_notes;
 %let opt_notes = %sysfunc(getoption(notes));
@@ -177,8 +188,8 @@ INPUT PARAMETER CHECKS
 /* Check that macro parameters are not empty. */
 %local parms i i_parm;
 %let parms = 
-  in_ds out_pf match_date match_exact match_inexact n_controls replace
-  keep_add_vars where by limit_tries seed del;   
+  in_ds out_pf match_date match_exact n_controls replace
+  keep_add_vars by limit_tries seed del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
   %if &&&i_parm = %then %do;
@@ -204,7 +215,7 @@ INPUT PARAMETER CHECKS
 %let rc = %sysfunc(close(&ds_id));
 
 /* Check specified variable names are valid, exists in the input dataset, 
-and that none of the specified variables have a "__" prefix. */
+and that none of the specified variables have a "__" or "_ctrl_ prefix. */
 %local vars i i_var j j_var ds_id rc;
 %let vars = match_date match_exact by keep_add_vars;
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
@@ -228,8 +239,9 @@ and that none of the specified variables have a "__" prefix. */
     %let rc = %sysfunc(close(&ds_id));
     /* Note that "dummy" has been included in %qsubstr call so that a 
     variable name of length one can be handled correctly. */
-    %if %eval(%qsubstr(&j_var dummy, 1, 2) = __) %then %do;
-      %put ERROR: Variable "&j_var" specified in "&i_var" has a "__" prefix;
+    %if %sysevalf(%qsubstr(&j_var dummy, 1, 2) = __ or 
+        %qsubstr(&j_var dummy, 1, 2) = _ctrl_) %then %do;
+      %put ERROR: Variable "&j_var" specified in "&i_var" has a "__" or "_ctrl_" prefix;
       %put ERROR: This is not allowed to make sure that input variables are not;
       %put ERROR: overwritten by temporary variables created by the macro!;
       %goto end_of_macro; 
@@ -245,7 +257,7 @@ in "match_inexact". */
 %end;
 
 data  __hm_empty;
-  set __data1(obs = 0);
+  set &in_ds(obs = 0);
 run;
 
 %local all_vars;
@@ -258,14 +270,14 @@ quit;
 %local match_inexact_vars i i_var;
 %let match_inexact_vars = ;
 %do i = 1 %to %sysfunc(countw(&all_vars, %str( )));
-  %let i_var = %scan(&all_vars, &i, %str( ));
-  %if %sysfunc(prxmatch('&i_var', &match_inexact)) %then
+  %let i_var = %lowcase(%scan(&all_vars, &i, %str( )));
+  %if %sysfunc(prxmatch("&i_var", %lowcase(&match_inexact))) %then
     %let match_inexact_vars = &match_inexact_vars &i_var;
 %end;
 
 %if &verbose = y %then %do;
   %put hash_match:   Variables identified:;
-  %put hash_match:   &match_inexact_vars;
+  %put hash_match:   match_inexact_vars = &match_inexact_vars;
 %end;
 
 /* Outcome dataset prefix needs to be a valid (libname.)member-name, 
@@ -357,7 +369,7 @@ that _null_ and/or _all_ are not among the specifed variables. */
 list of all variables in input dataset. */
 %if &keep_add_vars = _all_ %then %do;
   data  __hm_empty;
-    set __data1(obs = 0);
+    set &in_ds(obs = 0);
   run;
 
   proc sql noprint;
@@ -405,7 +417,7 @@ defined by the variables given in match_exact and by. */
 %local match_stratas;
 %let match_stratas = ;
 %if &by ne _null_ %then %let match_stratas = &match_stratas &by;
-%if &match_vars ne _null_ %then %let match_stratas = &match_stratas &match_exact;
+%if &match_exact ne _null_ %then %let match_stratas = &match_stratas &match_exact;
 
 /* If no exact matching or by variables are given, we will create a dummy 
 strata variable to facilitate the analyses. */
@@ -419,18 +431,35 @@ strata variable to facilitate the analyses. */
   %put hash_match: - match_stratas = &match_stratas; 
 %end;
 
+/* Find &match_date variable format. */
+%local match_date_fmt;
+proc sql noprint;
+  select format
+    into :match_date_fmt
+    from sashelp.vcolumn
+    where libname = "WORK" and memname = "%upcase(&in_ds)"
+      and name = "&match_date";
+quit;
+%put &match_date_fmt;
+%if &match_date_fmt = %then %let match_date_fmt = best32.;
+
 /* Load and restrict input data. */
 %if &verbose = y %then %do;
   %put hash_match: - Loading input data;
 %end;
 data __hm_data1;
+  format __merge_id best12. __match_date &match_date_fmt;
   set &in_ds;
   where &where;
   %if &match_stratas = __dummy_strata %then %do;
     __dummy_strata = "_null_";
-    keep __dumy_strata;
+    keep __dummy_strata;
   %end;
-  keep &match_stratas &match_date &match_inexact_vars &keep_add_vars;
+  __merge_id = _n_;
+  __match_date = &match_date;
+  keep __merge_id __match_date &match_stratas;
+  %if &match_inexact_vars ne %then %do; keep &match_inexact_vars; %end;
+  %if &keep_add_vars ne _null_ %then %do; keep &keep_add_vars; %end;
 run;
 
 /* If the specified where-condition results in any warnings or errors,
@@ -498,11 +527,7 @@ quit;
 %end;
 
 /* Create index. */
-/*TODO: at this point __hm_data3 should also be restricted to only
-included variables needed in the matching process. */
-%local all_match_vars;
-%let all_match_vars = __strata &match_data &match_inexact_vars;
-proc sort data = __hm_data2(keep = &all_match_vars) 
+proc sort data = __hm_data2(keep = __merge_id __match_date __strata &match_inexact_vars) 
     out = __hm_data3(index = (__strata));
 	by __strata;
 run;
@@ -536,6 +561,8 @@ proc sql noprint;
     from __hm_progress;
 quit;
 
+/*TODO add something verbose here on progress vars?*/
+
 /* Disable notes in log irrespective of the value of the
 print_notes parameter. */
 options nonotes;
@@ -545,10 +572,32 @@ run of the macro in the work directory before we do the matching. */
 proc datasets nolist nodetails;
   delete __hm_data_strata __hm_cases __hm_potential_controls
          __hm_matches __hm_no_matches
-         __hm_all_matches __hm_all_no_matches
-         __hm_info __hm_all_info;
+         __hm_all_matches1 __hm_all_no_matches1
+         __hm_info __hm_all_info1;
 run;
 quit;
+
+/* Find the length and type of variables. */
+%local i i_var;
+%do i = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+  %let i_var = %scan(&match_inexact_vars, &i, %str( ));
+  %local &i_var._type &i_var._length &i_var._format;
+  proc sql noprint;
+    select type, length, format
+      into :&i_var._type, :&i_var._length, :&i_var._format
+      from sashelp.vcolumn
+      where libname = "WORK" and memname = "__HM_DATA3"
+        and name = "&i_var";
+  quit;
+  %let &i_var._type = %sysfunc(compress(&&&i_var._type));
+  %let &i_var._length = %sysfunc(compress(&&&i_var._length));
+  %if &&&i_var._type = char %then %let &i_var._length = $&&&i_var._length; 
+
+  %if &&&i_var._format = %then %do;
+    %if &&&i_var._type = char %then %let &i_var._format = &&&i_var._length..;
+    %else %if &&&i_var._type = num %then %let &i_var._format = best32.;
+  %end;
+%end;
 
 /* Find matches in each strata. */
 %local i;
@@ -569,14 +618,23 @@ quit;
 
   /* Find cases in strata. */
   data __hm_cases;
-    set __hm_data_strata(where = (&match_date ne .));
+    set __hm_data_strata(where = (__match_date ne .));
   run;
 
   /* Make a dataset with potential controls. */
+  %local j j_var;
   data __hm_potential_controls; 
     set __hm_data_strata;
-    format __obs 20.;
-    __obs = _n_;
+    __hash_key = _n_;
+    rename 
+      __match_date = _ctrl___match_date 
+      __strata = _ctrl___strata
+      __merge_id = _ctrl___merge_id
+      ;
+    %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+      %let j_var = %scan(&match_inexact_vars, &j, %str( ));
+      rename &j_var = _ctrl_&j_var;
+    %end;
   run;
 
   /* Find number of cases and controls in strata. */
@@ -606,33 +664,41 @@ quit;
       call symput("max_tries", put(max_tries, best12.));
     run;
 
-    data __hm_matches(drop = __n)
-         __hm_no_matches/*(keep = __id __strata __index __n)*/;
+    %local j j_var;
+    data __hm_matches(drop = __hash_key __stop __controls __tries __rand_obs __rc __highest_tries)
+         __hm_no_matches(keep = __merge_id __match_date __strata &match_inexact_vars);
     	call streaminit(&seed);
-    	length	__obs 8 
-
-/*      TODO Need to fix. Need macro variable with all variables that
-      are to be kept */
-/*              __id_ctrl &__id_length __index_ctrl &__index_length */
-/*              __start_ctrl &__start_length __end_ctrl &__end_length*/
-
-
-;
+    	length	__hash_key _ctrl___merge_id _ctrl___match_date 8 
+        %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+          %let j_var = %scan(&match_inexact_vars, &j, %str( ));
+          _ctrl_&j_var &&&j_var._length
+        %end;
+        ;
+    	format	__hash_key _ctrl___merge_id best12. _ctrl___match_date &match_date_fmt 
+        %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+          %let j_var = %scan(&match_inexact_vars, &j, %str( ));
+          _ctrl_&j_var &&&j_var._format
+        %end;
+        ;
     	/* Load potential controls into hash object. */	
     	if _n_ = 1 then do;
     		declare hash h(dataset: "__hm_potential_controls");
     		declare hiter iter("h");
-    		h.defineKey("__obs");
+    		h.defineKey("__hash_key");
     		h.defineData(
-    			"__obs"
-/*          TODO fix*/
-/*          , "__id_ctrl", "__index_ctrl", "__start_ctrl", "__end_ctrl"*/
-    			);
+    			"__hash_key", "_ctrl___merge_id", "_ctrl___match_date"
+          %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+            %let j_var = %scan(&match_inexact_vars, &j, %str( ));
+            , "_ctrl_&j_var"
+          %end;
+    		);
     		h.defineDone();
-    		call missing(__obs
-/*        TODO fix*/
-/*, __id_ctrl, __index_ctrl, __start_ctrl, __end_ctrl*/
-
+    		call missing(
+          __hash_key, _ctrl___merge_id, _ctrl___match_date
+          %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+            %let j_var = %scan(&match_inexact_vars, &j, %str( ));
+            , _ctrl_&j_var
+          %end;
         );
 
         /* Initalize a match id variable */
@@ -662,7 +728,7 @@ quit;
       		__rc = h.find(key:__rand_obs);
     		/* Check if key exists and if valid control. */
         if __rc = 0 
-          %if &match_inexact ne %then %do;
+          %if %bquote(&match_inexact) ne %then %do;
             and &match_inexact
           %end;
     		then do;
@@ -684,35 +750,30 @@ quit;
         if __stop = 1 then do;
           if __controls < &n_controls then output __hm_no_matches;
           /* Update maximum number of tries needed to find all controls */
-          __highest_tires = max(__tries, __highest_tries);
+          __highest_tries = max(__tries, __highest_tries);
           call symput("highest_tries", put(__highest_tries, best12.));
         end;
       end;
-/*      TODO fix*/
-/*      keep __id_ctrl __index_ctrl __match_id __id __index __strata __n;*/
     run;
   %end;
-  /* If no cases or potential controls create an empty dataset. */
+  /* If no cases or no potential controls create an empty dataset. */
   %else %do;
     data __hm_matches;
-/*    TODO fix*/
-/*      format __match_id best12.;*/
-/*      set __hm_cases(obs = 0);*/
-/*      __id_ctrl = __id;*/
+      format __match_id best12.;
+      set __hm_cases(obs = 0);
     run;
 
     data __hm_no_matches;
-      set __hm_cases/*(keep = __id __strata __index)*/;
-      __n = 0; /* brug obs = 0 option?*/
+      set __hm_cases(obs = 0);
     run;
   %end;
 
   /* Append matches from strata to dataset with all matches. */
-  proc append base = __hm_all_matches data = __hm_matches;
+  proc append base = __hm_all_matches1 data = __hm_matches;
   run;
 
   /* Append cases for which not all matches could be found. */
-  proc append base = __hm_all_no_matches data = __hm_no_matches;
+  proc append base = __hm_all_no_matches1 data = __hm_no_matches;
   run;
 
   %local time_stop duration;
@@ -734,14 +795,14 @@ quit;
     ));
 
   /* Make dataset with strata information. */
-  %local highest_tires;
+  %local highest_tries;
   %if &n_strata_cases  = 0 or &n_strata_controls = 0 %then %do;
     %let highest_tries = .;
     %let max_tries = .;
   %end;
   data __hm_info;
     format __strata __n_cases __n_potential_controls best12. 
-           __start __end datetime32. __time_sec 20.2;
+           __start __stop datetime32. __time_sec 20.2;
     __strata = &i;
     __n_cases = &n_strata_cases;
     __n_potential_controls = &n_strata_controls;
@@ -750,10 +811,11 @@ quit;
     __time_sec = &duration;
     __max_tries = &max_tries;
     __highest_tries = &highest_tries;
+    output;
   run;
       
   /* Append strata diagnostics. */
-  proc append base = __hm_all_info data = __hm_info;
+  proc append base = __hm_all_info1 data = __hm_info;
   run;
   
   /* Print matching progress info to log. */
@@ -778,6 +840,8 @@ quit;
 %end;
 
 
+
+
 /******************************************************************************
 MAKE OUTPUT WITH MATCHED DATA
 ******************************************************************************/
@@ -787,50 +851,70 @@ MAKE OUTPUT WITH MATCHED DATA
 %end;
 
 proc sort data = __hm_all_matches1;
-  by __strata __match_id __id __id_ctrl;
+  by __strata __match_id;
 run;
 
 /* Cases */
+%local i i_var;
 data __hm_all_matches2_cases;
 	set __hm_all_matches1(
-    rename = (__match_id = temp) 
-    drop = __id_ctrl __index_ctrl
+    rename = (__match_id = tmp) 
+    drop = 
+      _ctrl___match_date
+      %do i = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+        %let i_var = %scan(&match_inexact_vars, &i, %str( ));
+        _ctrl_&i_var
+      %end;
   );
-	length __match_id 8 __case 3;
-	format __match_id 10. __case 1.;
-	by __strata temp;
+	length __match_id 8;
+	format __match_id 20.;
+	by __strata tmp;
 	retain __match_id;
 	if _n_ = 1 then __match_id = 0;
-	if first.temp then do;
+	if first.tmp then do;
 		__match_id + 1;
-		__case = 1;
 		output;
 	end;
-  drop temp;
+  drop tmp;
 run;
 
 /* Controls */
+%local i i_var;
 data __hm_all_matches2_controls(
     rename = (
-      __id_ctrl = __id 
-      __index_ctrl = __index
+      %do i = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+        %let i_var = %scan(&match_inexact_vars, &i, %str( ));
+        _ctrl_&i_var = &i_var
+      %end;
       )
   );
-	set __hm_all_matches1(rename = (__match_id = temp));
-	length __match_id 8 __case 3;
-	format __match_id 10. __case 1.;
-	by __strata temp;
+	set __hm_all_matches1(
+    rename = (__match_id = tmp)
+    drop = 
+      __match_date
+      %do i = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+        %let i_var = %scan(&match_inexact_vars, &i, %str( ));
+        &i_var
+      %end;
+  );
+	length __match_id 8;
+	format __match_id 20.;
+	by __strata tmp;
 	retain __match_id;
 	if _n_ = 1 then __match_id = 0;
-	if first.temp then do;
+	if first.tmp then do;
 		__match_id = __match_id + 1;
 	end;	
-	__case = 0;
-  drop temp __id __index ;
+  drop tmp;
 run;
 
-data __hm_all_matches3;
-	set __hm_all_matches2_cases __hm_all_matches2_controls;
+data __hm_all_matches3; 
+	set __hm_all_matches2_cases(in = q1) 
+      __hm_all_matches2_controls;
+  length __case 3;
+  format __match_id 20. __case 1.;
+  if q1 then __case = 1;
+  else __case = 0;
 run;
 
 proc sort data = __hm_all_matches3;
@@ -838,18 +922,41 @@ proc sort data = __hm_all_matches3;
 run;
 
 data __hm_all_matches4;
-  set __hm_all_matches3;
+  set __hm_all_matches3(rename = (__match_date = tmp));
   by __match_id;
-  format __match_date date9.;
+  format __match_date &match_date_fmt;
   retain __match_date;
-  if first.__match_id then __match_date = __index;
+  if first.__match_id then __match_date = tmp;
 run;
 
-/* merge variables back to matched data */
+
+
+
+%end_of_macro:
+
+
+/* Delete temporary datasets created by the macro. */
+%if &del ne n  %then %do;
+  proc datasets nodetails nolist;
+    delete __hm_:;
+  run;
+  quit;
+%end; 
+
+/* Restore value of notes option */
+options &opt_notes;
+
+%put hash_match: end execution;
+
+%mend hash_match;
+
+
+
+/* merge strata and keep_add_vars variables back to matched 
+data */
 proc sql;
   create table __hm_all_matches5 as
-    select a.__match_id, a.__match_date, a.__case, a.__id,
-           a.__index, a.__strata, b.__start, b.__end
+    select a.__match_id, a.__match_date, a.__case, a.__strata
       %if &keep_add_vars ne _null_ %then %do;
         %do i = 1 %to %sysfunc(countw(&keep_add_vars, %str( )));
           %let i_var = %scan(&keep_add_vars, &i, %str( ));
@@ -861,6 +968,8 @@ proc sql;
       __hm_data2(rename = (__strata = __temp)) as b
       on a.__strata = b.__temp and a.__id = b.__id;
 quit;
+
+
 
 proc sql;
   create table &out_pf._matches(
@@ -882,6 +991,31 @@ proc sql;
     on a.__strata = b.__strata
     order by __match_id, __case descending, a.__id;
 quit;
+
+
+
+%end_of_macro:
+
+
+/* Delete temporary datasets created by the macro. */
+%if &del ne n  %then %do;
+  proc datasets nodetails nolist;
+    delete __hm_:;
+  run;
+  quit;
+%end; 
+
+/* Restore value of notes option */
+options &opt_notes;
+
+%put hash_match: end execution;
+
+%mend hash_match;
+
+
+
+
+
 
 
 /******************************************************************************
