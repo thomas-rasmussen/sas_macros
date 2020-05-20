@@ -1,34 +1,3 @@
-/*
-TODO:
-1) implement inexact matching
-2) patch all problems arising from changes
-3) Make new examples showing how to make the matching conds that
-was made automatically earlier.
-4) Clean up tests. 
-5) Add tests that use regular expression to check that "where" and 
-"match_inexact" is using a %str() wrapper? Maybe don't since it might not
-be strictly necesary and/or other masking functions might be more
-appropriate?
-6) Add warning/error check in the matching phase, that termiantes like 
-the "where" check.
-7) Improve verbose messages, ie comming before something is about to be done
-8) Revise keep_add_vars. Should default to including all generated variables
-and all variables specified in the other parameters?
-9) Include example showing that doing exact matching in the match_inexact 
-paramter leads to worse efficiency, at least with large datasets.
-10) dataset with partial matches, might not have id variable. Think about
-if this is realistic in practice. Wouldnt you always make a id ne __id cond? And
-if you didnt for some reason you wouldnt need the id anyway?
-11) __vars that are made make name collisions possible again. Need to make list
-of protected var names like obs, n etc. and chekc during inoput? 
-12) bliver nødt til at lave en __match_date fra start der er &match_date, så
-ting virker uanset om &match_date bruges i match_inexact eller ej.
-
-13) Ville de give mening at tilføje en warning hvis der er __hm_ prefix 
-datasæt i work directory? Med toggle til at slå fra?
-14) __match_date behøver ikke inkluderes i hash_table?
-*/
-
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
 VERSION:    0.3.0
@@ -37,113 +6,121 @@ LICENCE:    Creative Commons CC0 1.0 Universal
 ********************************************************************************
 DESCRIPTION:
 Matching using a hash-table merge approach. The input dataset is expected to be 
-a source population with the date, if any, each person becomes a case and is
-to be matched with a set of controls from the source population that fulfills
-a set of specified matching criterias.
-
-Controls are selected by randomly picking potential controls among patients 
-with the same value of exact matching and by variables specified in 
-<match_exact> and <by>, and then further evaluating if the inexact matching 
-conditions given in <match_inexact> are fulfilled. 
+a source population with the date, if any, each person is to be matched with a 
+set of controls from the source population that fulfills specified matching 
+criterias. Controls are selected by randomly picking potential controls until 
+the desired amount of controls have been found or the limit of maximum tries
+is reached.
 
 Accompanying examples and tests, version notes etc. can be found at:
 https://github.com/thomas-rasmussen/sas_macros
 ********************************************************************************
 PARAMETERS:
 *** REQUIRED ***
-in_ds:            (libname.)member-name of input dataset with source population.         
-out_pf:           (libname.)member-name prefix of output datasets. The following
-                  datasets are created by the macro:
-                  <out_pdf>_matches: Matched population.
-                  <out_pdf>_no_matches: Information on cases for which 
-                  no (or only partial) matches could be found.
-                  <out_pdf>_info: Miscellaneous information and 
-                  diagnostics that can be helpful to evaluate the 
-                  appropriateness of the matched population.
-match_date:       Date, if any, the person/case is to be matched with
-                  a set of controls. Must be a numeric variable.
+in_ds:          (libname.)member-name of input dataset with source population.         
+out_pf:         (libname.)member-name prefix of output datasets. The following
+                datasets are created by the macro:
+                <out_pf>_matches: Matched population. Note that the matched
+                population also includes matched sets, where not all of the
+                desired number of controls could be found.
+                <out_pf>_incomp_info: Information on cases for which 
+                incomplete, ie no or only some matches could be found.
+                <out_pf>_match_info: Miscellaneous information and 
+                diagnostics on the results of the matching.
+match_date:     Date, if any, the person/case is to be matched with
+                a set of controls. Must be a numeric variable.
 *** OPTIONAL ***
-match_exact:      Space-separated list of (exact) matching variables. Default 
-                  is match_exact = _null_, ie no matching variables are used. 
-match_inexact:    Inexact matching conditions. Use the %str function to 
-                  specify conditions, eg. 
-                  match_inexact = %str(
-                    abs(<var1> - _ctrl_<var1>) <= 5 and <var2> ne _ctrl_<var2>
-                  )
-                  Here <var1> and <var2> are variables from the input dataset, 
-                  and _ctrl_<var1> and _ctrl_<var2> are variables created the by the 
-                  macro. The <var> variables corresponds to case values, and 
-                  _ctrl_<var> corresponds to (potential) control values.
-                  Default is match_inexact = %str(), eg no (inexact) matching 
-                  conditions are specified.
-n_controls:       Number of controls to match to each case. 
-                  Default is n_controls = 10.
-replace:          Match with replacement:
-                  - Yes: replace = y (default)
-                  - No:  replace = n  
-                  Note: Matching without replacement is less efficient (but
-                  still fast) when the control to case ratio is small. The
-                  reason for this is very technical and has to do with how 
-                  controls are selected at random from the hash-table during
-                  matching. See code for more information.
-where:            Condition used to to restrict the input dataset in a where-
-                  statement. Use the %str function as a wrapper, , eg 
-                  where = %str(var = "value").
-by:               Space-separated list of by variables. Default is by = _null_,
-                  ie no by variables. 
-limit_tries:      The maximum number of tries to find all matches for each
-                  case is defined as
-                   max_tries = min(<n_controls> * n_99pct, <limit_tries>)
-                  where 
-                    n_99pct = round(k*[log(k)- ln(-ln(p))]), p = 0.99
-                  is the approximate number of tries needed to have a 
-                  99% probability (100 * p), to have tried all potential 
-                  controls (k) at least once. We multiply this approximate 
-                  number with <n_controls>, and we take the minimum of this 
-                  number and <limit_tries>. This approach ensures that we are 
-                  reasonably sure that we have considered all potential 
-                  controls for each individual match that is made, and that we 
-                  can set a upper limit. Default is limit_tries = 10**6. 
-                  n_99pct formula is from 
-                  https://math.stackexchange.com/questions/1155615/
-                  probability-of-picking-each-of-m-elements-at-least-once-after-
-                  n-trials.
-keep_add_vars:    Space-separated list of additional variables from the input 
-                  to include in the <out_pf>_matches output dataset. Variables 
-                  specified in other macro parameters are automatically kept 
-                  and does not need to be specified. All variables from
-                  the input dataset can be kept using keep_add_vars = _all_.
-                  Default is keep_add_vars = _null_, ie keep no additional 
-                  variables.
-seed:             Seed used for random number generation. Default is seed = 0,
-                  ie a random non-reproducible seed is used.
-print_notes:      Print notes in log?
-                  - Yes: print_notes = y
-                  - No:  print_notes = n (default)
-verbose:          Print info on what is happening during macro execution
-                  to the log:
-                  - Yes: verbose = y
-                  - No:  verbose = n (default)
-del:              Delete intermediate datasets created by the macro:
-                  - Yes: del = y (default)
-                  - no:  del = n              
+match_exact:    Space-separated list of (exact) matching variables. Default 
+                is match_exact = _null_, ie no matching variables are used. 
+match_inexact:  Inexact matching conditions. Use the %str function to 
+                specify conditions, eg. 
+                match_inexact = %str(
+                  abs(<var1> - _ctrl_<var1>) <= 5 and <var2> ne _ctrl_<var2>
+                )
+                Here <var1> and <var2> are variables from the input dataset, 
+                and _ctrl_<var1> and _ctrl_<var2> are variables created by the 
+                macro. The <var> variables corresponds to case values, and 
+                _ctrl_<var> corresponds to (potential) control values.
+                Default is match_inexact = %str(), eg no (inexact) matching 
+                conditions are specified.
+                Note that care should be taken when using this parameter.
+                Misspelling a variable name will not result in errors, and
+                it might not be obvious from the output that an error in
+                the specification has been made. Always check that the 
+                matching conditions are actually fulfilled in the output data.
+                See examples.
+n_controls:     Number of controls to match to each case. 
+                Default is n_controls = 10.
+replace:        Match with replacement:
+                - Yes: replace = y (default)
+                - No:  replace = n  
+                Note: Matching without replacement is less efficient (but
+                still fast) when the control to case ratio is small. The
+                reason for this is very technical and has to do with how 
+                controls are selected at random from the hash-table during
+                matching. See code for more information.
+keep_add_vars:  Space-separated list of additional variables from the input 
+                to include in the <out_pf>_matches output dataset. Variables 
+                specified in other macro parameters are automatically kept 
+                and does not need to be specified, the exception being the
+                variable specified in <match_date> that not included in its
+                original form in the output, and any variables used in 
+                <where>. All variables from
+                the input dataset can be kept using keep_add_vars = _all_.
+                Default is keep_add_vars = _null_, ie keep no additional 
+                variables.
+where:          Condition used to to restrict the input dataset in a where-
+                statement. Use the %str function as a wrapper, , eg 
+                where = %str(var = "value").
+by:             Space-separated list of by variables. Default is by = _null_,
+                ie no by variables. 
+limit_tries:    The maximum number of tries to find all matches for each
+                case is defined as
+                 max_tries = min(<n_controls> * n_99pct, <limit_tries>)
+                where 
+                  n_99pct = round(k*[log(k)- ln(-ln(p))]), p = 0.99
+                is the approximate number of tries needed to have a 
+                99% probability (100 * p), to have tried all potential 
+                controls (k) at least once. We multiply this approximate 
+                number with <n_controls>, and we take the minimum of this 
+                number and <limit_tries>. This approach ensures that we are 
+                reasonably sure that we have considered all potential 
+                controls for each individual match that is made, and that we 
+                can set a upper limit. Must be a positive integer.
+                Default is limit_tries = 10**6. 
+                n_99pct formula is from 
+                https://math.stackexchange.com/questions/1155615/
+                probability-of-picking-each-of-m-elements-at-least-once-after-
+                n-trials.
+seed:           Seed used for random number generation. Default is seed = 0,
+                ie a random non-reproducible seed is used.
+print_notes:    Print notes in log?
+                - Yes: print_notes = y
+                - No:  print_notes = n (default)
+verbose:        Print info on what is happening during macro execution
+                to the log:
+                - Yes: verbose = y
+                - No:  verbose = n (default)
+del:            Delete intermediate datasets created by the macro:
+                - Yes: del = y (default)
+                - no:  del = n              
 ******************************************************************************/
 %macro hash_match(
-  in_ds           = ,
-  out_pf          = ,
-  match_date      = ,
-  match_exact     = _null_,
-  match_inexact   = %str(),
-  n_controls      = 10,
-  replace         = y,
-  keep_add_vars   = _null_,
-  where           = %str(),
-  by              = _null_,
-  limit_tries       = 10**6,
-  seed            = 0,
-  print_notes     = n,
-  verbose         = n,
-  del             = y
+  in_ds         = ,
+  out_pf        = ,
+  match_date    = ,
+  match_exact   = _null_,
+  match_inexact = %str(),
+  n_controls    = 10,
+  replace       = y,
+  keep_add_vars = _null_,
+  where         = %str(),
+  by            = _null_,
+  limit_tries   = 10**6,
+  seed          = 0,
+  print_notes   = n,
+  verbose       = n,
+  del           = y
 ) / minoperator mindelimiter = ' ';
 
 %put hash_match: start execution;
@@ -154,6 +131,13 @@ del:              Delete intermediate datasets created by the macro:
 %local opt_notes;
 %let opt_notes = %sysfunc(getoption(notes));
 options nonotes;
+
+/* Make sure there are no intermediate dataset from from a previous 
+run of the macro in the work directory before execution. */
+proc datasets nolist nodetails;
+  delete __hm_:;
+run;
+quit;
 
 /*******************************************************************************
 INPUT PARAMETER CHECKS 
@@ -215,11 +199,24 @@ INPUT PARAMETER CHECKS
 %let rc = %sysfunc(close(&ds_id));
 
 /* Check specified variable names are valid, exists in the input dataset, 
-and that none of the specified variables have a "__" or "_ctrl_ prefix. */
+that none of the specified variables have a "__" or "_ctrl_ prefix,
+and that each variable name has length of 25 or less. */
+
 %local vars i i_var j j_var ds_id rc;
 %let vars = match_date match_exact by keep_add_vars;
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
+  /* Regular expression: variable must start with a letter or underscore,
+  followed by 0-24 letters, numbers or underscores. The whole regular 
+  expression is case-insentitive. */
+  %do j = 1 %to %sysfunc(countw(&&&i_var, %str( )));
+    %let j_var = %scan(&&&i_var, &j, %str( ));
+    %if %sysfunc(prxmatch('^[\w][\w\d]{0,24}$', &j_var)) = 0 %then %do;
+      %put ERROR: Specified variable "&j_var" in "&i_var" has length greater than 25;
+      %put ERROR: which is not allowed!;
+      %goto end_of_macro; 
+    %end;
+  %end;
   %do j = 1 %to %sysfunc(countw(&&&i_var, %str( )));
     %let j_var = %scan(&&&i_var, &j, %str( ));
     %if %sysfunc(nvalid(&j_var)) = 0 %then %do;
@@ -277,22 +274,22 @@ quit;
 
 %if &verbose = y %then %do;
   %put hash_match:   Variables identified:;
-  %put hash_match:   match_inexact_vars = &match_inexact_vars;
+  %put hash_match:   &match_inexact_vars;
 %end;
 
 /* Outcome dataset prefix needs to be a valid (libname.)member-name, 
-where the member-name part can have a length of 23 at the most, to make sure 
+where the member-name part can have a length of 20 at the most, to make sure 
 that the output dataset names are not too long.
 
 Regular expression: (lib-name.)member-name, where the libname is
 optional. The libname must start with a letter, followed by 0-7 letters, 
 numbers or underscores and must end with a ".". Member-name part must start
-with a letter or underscore, and is followed by 0-22 letters ,numbers or 
+with a letter or underscore, and is followed by 0-19 letters ,numbers or 
 underscores. The whole regular expression is case-insentitive. */
-%if %sysfunc(prxmatch('^([a-z][\w\d]{0,7}\.)*[\w][\w\d]{0,22}$', &out_pf)) = 0 
+%if %sysfunc(prxmatch('^([a-z][\w\d]{0,7}\.)*[\w][\w\d]{0,19}$', &out_pf)) = 0 
   %then %do;
   %put ERROR: Specified "out_pf" output prefix "&out_pf" is either invalid;
-  %put ERROR: or the member-name part has length greater than 23;
+  %put ERROR: or the member-name part has length greater than 20;
   %put ERROR: which is not allowed!;
   %goto end_of_macro; 
 %end;
@@ -313,6 +310,22 @@ run;
   %goto end_of_macro;
 %end;
 
+/* match_exact check: Check no duplicates. */
+%local i i_var j cnt;
+%do i = 1 %to %sysfunc(countw(&match_exact, %str( )));
+  %let i_var = %scan(&match_exact, &i, %str( ));
+  %let cnt = 0;
+  %do j = 1 %to %sysfunc(countw(&match_exact, %str( )));
+    %if &i_var = %scan(&match_exact, &j, %str( )) 
+      %then %let cnt = %eval(&cnt + 1);
+  %end;
+  %if %sysevalf(&cnt > 1) %then %do;
+    %put ERROR: Variable "&i_var" is included multiple times in;
+    %put ERROR: match_exact = &match_exact;
+    %goto end_of_macro;
+  %end;
+%end;
+
 /* Check n_control is a positive integer.
 Regular expression: starts with a number 1-9, followed by, and ends with,
 one or more digits (so that 0 is not allowed, but eg 10 is). */
@@ -321,9 +334,25 @@ one or more digits (so that 0 is not allowed, but eg 10 is). */
   %goto end_of_macro; 
 %end;
 
-/* Check limit_tries is a positive integer. limit_tries is likely to be a large 
-number which is easier to write on the form "10 ** x", so we evaluate the 
-expression given in limit_tries before checking that it is an integer.
+/* by check: Check no duplicates. */
+%local i i_var j cnt;
+%do i = 1 %to %sysfunc(countw(&by, %str( )));
+  %let i_var = %scan(&by, &i, %str( ));
+  %let cnt = 0;
+  %do j = 1 %to %sysfunc(countw(&by, %str( )));
+    %if &i_var = %scan(&by, &j, %str( )) 
+      %then %let cnt = %eval(&cnt + 1);
+  %end;
+  %if %sysevalf(&cnt > 1) %then %do;
+    %put ERROR: Variable "&i_var" is included multiple times in;
+    %put ERROR: by = &by;
+    %goto end_of_macro;
+  %end;
+%end;
+
+/* limit_tries check: Check positive integer. limit_tries is likely to be a 
+large number which is easier to write on the form "10 ** x", so we evaluate 
+the expression given in limit_tries before checking that it is an integer.
 Regular expression: Starts with a number 1-9, followed by, and ends with,
 one or more digits (so that 0 is not allowed, but eg 10 is). */
 %if %sysfunc(prxmatch('^[1-9]\d*$', %sysevalf(&limit_tries))) = 0 %then %do;
@@ -350,7 +379,24 @@ correctly. */
 %end;
 
 %if &verbose = y %then %do;
-  %put hash_match: - Input value of "keep_add_vars": &keep_add_vars;
+  %put hash_match: - Input value of keep_add_vars:; 
+  %put hash_match:   keep_add_vars = &keep_add_vars;
+%end;
+
+/* keep_add_vars check: Check no duplicates. */
+%local i i_var j cnt;
+%do i = 1 %to %sysfunc(countw(&keep_add_vars, %str( )));
+  %let i_var = %scan(&keep_add_vars, &i, %str( ));
+  %let cnt = 0;
+  %do j = 1 %to %sysfunc(countw(&keep_add_vars, %str( )));
+    %if &i_var = %scan(&keep_add_vars, &j, %str( )) 
+      %then %let cnt = %eval(&cnt + 1);
+  %end;
+  %if %sysevalf(&cnt > 1) %then %do;
+    %put ERROR: Variable "&i_var" is included multiple times in;
+    %put ERROR: keep_add_vars = &keep_add_vars;
+    %goto end_of_macro;
+  %end;
 %end;
 
 /* keep_add_vars check: if more than one variable is specified, make sure 
@@ -359,7 +405,7 @@ that _null_ and/or _all_ are not among the specifed variables. */
   %if (_all_ in %lowcase(&keep_add_vars)) or 
       (_null_ in %lowcase(&keep_add_vars)) %then %do;
     %put ERROR: A list of variables have been specified in "keep_add_vars";
-    %put ERROR: but the list contains one/both of the protected;
+    %put ERROR: but the list contains one/both of the;
     %put ERROR: values _null_ and _all_!;
     %goto end_of_macro;
   %end;
@@ -386,9 +432,10 @@ included in the output data. */
 %let keep_add_vars = ;
 %do i = 1 %to %sysfunc(countw(&tmp, %str( )));
   %let i_var = %scan(&tmp, &i, %str( ));
-  %if (&i_var in &match_date &match_exact &by &match_inexact_vars) = 0 
+  %if (&i_var in &match_exact &by &match_inexact_vars) = 0 
     %then %let keep_add_vars = &keep_add_vars &i_var;
 %end;
+
 /* If the removal of redundant variables results in the 
 macro variable being empty, set it to _null_ */
 %if &keep_add_vars = %then %let keep_add_vars = _null_;
@@ -400,15 +447,16 @@ macro variable being empty, set it to _null_ */
 %end;
 
 
+
 /******************************************************************************
 LOAD INPUT DATA
 ******************************************************************************/
 
 %if &verbose = y %then %do;
   %put hash_match: *** Load input data ***;
-  %put hash_match: - Creating macro variable "match_stratas" including all;
-  %put hash_match:   variables given in "match_exact" and "by" that is used;
-  %put hash_match:   to define stratas/exact matching conditions in which we;
+  %put hash_match: - Create macro variable with all variables given in;
+  %put hash_match:   "match_exact" and "by" that is used to define;
+  %put hash_match:   stratas/exact matching conditions in which we;
   %put hash_match:   do the matching;
 %end;
 
@@ -424,7 +472,7 @@ strata variable to facilitate the analyses. */
 %if &verbose = y and &match_stratas = %then %do;
   %put hash_match: - No exact matching variables or by variables specified.;
   %put hash_match:   Dummy matching variable __dummy_strata will be added;
-  %put hash_match:   to the input data and "match_stratas" to facilitate analyses.;
+  %put hash_match:   to the input data to facilitate analyses.;
 %end;
 %if &match_stratas = %then %let match_stratas = __dummy_strata;
 %if &verbose = y %then %do;
@@ -440,7 +488,6 @@ proc sql noprint;
     where libname = "WORK" and memname = "%upcase(&in_ds)"
       and name = "&match_date";
 quit;
-%put &match_date_fmt;
 %if &match_date_fmt = %then %let match_date_fmt = best32.;
 
 /* Load and restrict input data. */
@@ -470,6 +517,9 @@ the macro is terminated. */
   %put ERROR- produced a warning or an error. Macro terminated!;
   %goto end_of_macro; 
 %end;
+%if &verbose = y %then %do;
+  %put hash_match: - Input data succesfully loaded;
+%end;
 
 
 /******************************************************************************
@@ -478,9 +528,9 @@ PREPARE DATA
 
 %if &verbose = y %then %do;
   %put hash_match: *** Prepare data for matching ***;
-  %put hash_match: - Creating a composite strata variable based on unique;
-  %put hash_match:   combinations of values of the variables in ;
-  %put hash_match:   match_stratas = &match_stratas;
+  %put hash_match: - Create composite strata variable based on unique;
+  %put hash_match:   combinations of values of the variables:;
+  %put hash_match:   &match_stratas;
 %end;
 
 /* Find unique strata values and make a new composite strata variable. */
@@ -500,7 +550,7 @@ proc sql noprint;
     from __hm_stratas2;
 quit;
 
-/* Add composite strata variable to data.*/
+/* Add composite strata variable to data. */
 %local i i_strata;
 proc sql;
   create table __hm_data2 as
@@ -522,7 +572,7 @@ proc sql;
 quit;
 
 %if &verbose = y %then %do;
-  %put hash_match: - Creating an index on __strata for fast subsetting of data;
+  %put hash_match: - Create an index for fast subsetting of data;
   %put hash_match:   during matching.;
 %end;
 
@@ -561,21 +611,9 @@ proc sql noprint;
     from __hm_progress;
 quit;
 
-/*TODO add something verbose here on progress vars?*/
-
 /* Disable notes in log irrespective of the value of the
 print_notes parameter. */
 options nonotes;
-
-/* Make sure there are no intermediate dataset from from a previous 
-run of the macro in the work directory before we do the matching. */
-proc datasets nolist nodetails;
-  delete __hm_data_strata __hm_cases __hm_potential_controls
-         __hm_matches __hm_no_matches
-         __hm_all_matches1 __hm_all_no_matches1
-         __hm_info __hm_all_info1;
-run;
-quit;
 
 /* Find the length and type of variables. */
 %local i i_var;
@@ -612,22 +650,21 @@ quit;
   %let time_start = %sysfunc(datetime());
 
   /* Restrict data to strata. */
-  data __hm_data_strata;
+  data __hm_strata_data;
     set __hm_data3(where = (__strata = &i));
   run;
 
   /* Find cases in strata. */
-  data __hm_cases;
-    set __hm_data_strata(where = (__match_date ne .));
+  data __hm_strata_cases;
+    set __hm_strata_data(where = (__match_date ne .));
   run;
 
   /* Make a dataset with potential controls. */
   %local j j_var;
-  data __hm_potential_controls; 
-    set __hm_data_strata;
+  data __hm_strata_controls; 
+    set __hm_strata_data;
     __hash_key = _n_;
     rename 
-      __match_date = _ctrl___match_date 
       __strata = _ctrl___strata
       __merge_id = _ctrl___merge_id
       ;
@@ -641,10 +678,10 @@ quit;
   proc sql noprint;
     select count(*) 
       into :n_strata_cases
-      from __hm_cases;
+      from __hm_strata_cases;
     select count(*) 
       into :n_strata_controls
-      from __hm_potential_controls;
+      from __hm_strata_controls;
   quit;
 
   /* If there are both cases and potential controls in the strata, 
@@ -665,16 +702,16 @@ quit;
     run;
 
     %local j j_var;
-    data __hm_matches(drop = __hash_key __stop __controls __tries __rand_obs __rc __highest_tries)
-         __hm_no_matches(keep = __merge_id __match_date __strata &match_inexact_vars);
+    data __hm_strata_matches(drop = __hash_key __stop __controls __tries __rand_obs __rc __highest_tries)
+         __hm_strata_incomp_info(keep = __merge_id __match_date __strata __controls &match_inexact_vars);
     	call streaminit(&seed);
-    	length	__hash_key _ctrl___merge_id _ctrl___match_date 8 
+    	length	__hash_key _ctrl___merge_id 8 
         %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
           %let j_var = %scan(&match_inexact_vars, &j, %str( ));
           _ctrl_&j_var &&&j_var._length
         %end;
         ;
-    	format	__hash_key _ctrl___merge_id best12. _ctrl___match_date &match_date_fmt 
+    	format	__hash_key _ctrl___merge_id best12. 
         %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
           %let j_var = %scan(&match_inexact_vars, &j, %str( ));
           _ctrl_&j_var &&&j_var._format
@@ -682,11 +719,11 @@ quit;
         ;
     	/* Load potential controls into hash object. */	
     	if _n_ = 1 then do;
-    		declare hash h(dataset: "__hm_potential_controls");
+    		declare hash h(dataset: "__hm_strata_controls");
     		declare hiter iter("h");
     		h.defineKey("__hash_key");
     		h.defineData(
-    			"__hash_key", "_ctrl___merge_id", "_ctrl___match_date"
+    			"__hash_key", "_ctrl___merge_id"
           %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
             %let j_var = %scan(&match_inexact_vars, &j, %str( ));
             , "_ctrl_&j_var"
@@ -694,7 +731,7 @@ quit;
     		);
     		h.defineDone();
     		call missing(
-          __hash_key, _ctrl___merge_id, _ctrl___match_date
+          __hash_key, _ctrl___merge_id
           %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
             %let j_var = %scan(&match_inexact_vars, &j, %str( ));
             , _ctrl_&j_var
@@ -710,7 +747,7 @@ quit;
     	end;
 
     	/* Open case dataset */
-    	set __hm_cases;
+    	set __hm_strata_cases;
 
       /* initialize utility variables */
     	__stop = 0;
@@ -739,41 +776,51 @@ quit;
             __rc = h.remove(key: __rand_obs);
           %end;
           /* Output matched control. */
-          output __hm_matches;
+          output __hm_strata_matches;
     		end;
     		/* When we have found n_control valid controls or we reach the
         maximum number of tries we stop the loop. */ 
-    		if __controls >= &n_controls or __tries > &max_tries then __stop = 1;
+    		if __controls >= &n_controls or __tries >= &max_tries then __stop = 1;
    
         /* If we have not found the wanted number of controls for a case
         we output info on the case to a dataset. */
         if __stop = 1 then do;
-          if __controls < &n_controls then output __hm_no_matches;
+          if __controls < &n_controls then output __hm_strata_incomp_info;
           /* Update maximum number of tries needed to find all controls */
           __highest_tries = max(__tries, __highest_tries);
           call symput("highest_tries", put(__highest_tries, best12.));
         end;
       end;
     run;
+
+    /* If the mathcing results in any warnings or errors,
+    the macro is terminated. */
+    %if &syserr ne 0 %then %do;
+      %put ERROR- Matching resulted in a warning or error!;
+      %put ERROR- Check if specified "match_inexact" condition:;
+      %put ERROR- match_inexact = &match_inexact;
+      %put ERROR- is valid.;
+      %goto end_of_macro; 
+    %end;
   %end;
   /* If no cases or no potential controls create an empty dataset. */
   %else %do;
-    data __hm_matches;
+    data __hm_strata_matches;
       format __match_id best12.;
-      set __hm_cases(obs = 0);
+      set __hm_strata_cases(obs = 0);
     run;
 
-    data __hm_no_matches;
-      set __hm_cases(obs = 0);
+    data __hm_strata_incomp_info;
+      set __hm_strata_cases(obs = 0);
     run;
   %end;
 
   /* Append matches from strata to dataset with all matches. */
-  proc append base = __hm_all_matches1 data = __hm_matches;
+  proc append base = __hm_all_matches1 data = __hm_strata_matches;
   run;
 
   /* Append cases for which not all matches could be found. */
-  proc append base = __hm_all_no_matches1 data = __hm_no_matches;
+  proc append base = __hm_all_incomp_info1 data = __hm_strata_incomp_info;
   run;
 
   %local time_stop duration;
@@ -800,22 +847,22 @@ quit;
     %let highest_tries = .;
     %let max_tries = .;
   %end;
-  data __hm_info;
+  data __hm_strata_info;
     format __strata __n_cases __n_potential_controls best12. 
-           __start __stop datetime32. __time_sec 20.2;
+           __start __stop __run_time $20.;
     __strata = &i;
     __n_cases = &n_strata_cases;
     __n_potential_controls = &n_strata_controls;
-    __start = &time_start;
-    __stop = &time_stop;
-    __time_sec = &duration;
+    __start = compress(put(&time_start, datetime32.));
+    __stop = compress(put(&time_stop, datetime32.));
+    __run_time = compress(put(&duration, time13.));
     __max_tries = &max_tries;
     __highest_tries = &highest_tries;
     output;
   run;
-      
+
   /* Append strata diagnostics. */
-  proc append base = __hm_all_info1 data = __hm_info;
+  proc append base = __hm_all_info1 data = __hm_strata_info;
   run;
   
   /* Print matching progress info to log. */
@@ -839,7 +886,19 @@ quit;
   options notes;
 %end;
 
+/* If there eare no cases at all in the data, a warning is printed in the log
+and the macro will not try to produce output datasets since its meaningless. */
+%local n_cases_total;
+proc sql noprint;
+  select sum(__n_cases) 
+    into :n_cases_total
+    from __hm_all_info1;
+quit;
 
+%if &n_cases_total = 0 %then %do;
+  %put WARNING: No cases in input dataset. Output datasets not created!;
+  %goto end_of_macro;  
+%end;
 
 
 /******************************************************************************
@@ -847,7 +906,8 @@ MAKE OUTPUT WITH MATCHED DATA
 ******************************************************************************/
 
 %if &verbose = y %then %do;
-  %put hash_match: *** Create output dataset with matched data ***;
+  %put hash_match  *** Create output datasets ***;
+  %put hash_match: - Matched data;
 %end;
 
 proc sort data = __hm_all_matches1;
@@ -860,7 +920,7 @@ data __hm_all_matches2_cases;
 	set __hm_all_matches1(
     rename = (__match_id = tmp) 
     drop = 
-      _ctrl___match_date
+      _ctrl___merge_id
       %do i = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
         %let i_var = %scan(&match_inexact_vars, &i, %str( ));
         _ctrl_&i_var
@@ -882,6 +942,7 @@ run;
 %local i i_var;
 data __hm_all_matches2_controls(
     rename = (
+      _ctrl___merge_id = __merge_id 
       %do i = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
         %let i_var = %scan(&match_inexact_vars, &i, %str( ));
         _ctrl_&i_var = &i_var
@@ -891,7 +952,7 @@ data __hm_all_matches2_controls(
 	set __hm_all_matches1(
     rename = (__match_id = tmp)
     drop = 
-      __match_date
+      __merge_id
       %do i = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
         %let i_var = %scan(&match_inexact_vars, &i, %str( ));
         &i_var
@@ -927,135 +988,86 @@ data __hm_all_matches4;
   format __match_date &match_date_fmt;
   retain __match_date;
   if first.__match_id then __match_date = tmp;
+  drop tmp;
 run;
 
 
 
-
-%end_of_macro:
-
-
-/* Delete temporary datasets created by the macro. */
-%if &del ne n  %then %do;
-  proc datasets nodetails nolist;
-    delete __hm_:;
-  run;
-  quit;
-%end; 
-
-/* Restore value of notes option */
-options &opt_notes;
-
-%put hash_match: end execution;
-
-%mend hash_match;
-
-
-
-/* merge strata and keep_add_vars variables back to matched 
+/* merge __strata and keep_add_vars variables back to matched 
 data */
+%local i i_var;
 proc sql;
-  create table __hm_all_matches5 as
-    select a.__match_id, a.__match_date, a.__case, a.__strata
-      %if &keep_add_vars ne _null_ %then %do;
-        %do i = 1 %to %sysfunc(countw(&keep_add_vars, %str( )));
-          %let i_var = %scan(&keep_add_vars, &i, %str( ));
-            ,b.&i_var
-        %end;
-      %end;
-      from __hm_all_matches4 as a
-      left join
-      __hm_data2(rename = (__strata = __temp)) as b
-      on a.__strata = b.__temp and a.__id = b.__id;
-quit;
-
-
-
-proc sql;
-  create table &out_pf._matches(
-      rename = (
-        __index = &match_date __id = &id_var   
-        __start = &fu_start
-        __end = &fu_end
-      ) drop = __strata) as
+  create table &out_pf._matches as
     select 
     %if &match_stratas ne __dummy_strata %then %do;
       %do i = 1 %to %sysfunc(countw(&match_stratas, %str( )));
-        %let i_strata = %scan(&match_stratas, &i, %str( ));
-        b.&i_strata,
+        %let i_var = %scan(&match_stratas, &i, %str( ));
+        b.&i_var,
       %end;
     %end;
-    a.*
-    from __hm_all_matches5 as a
-    left join __hm_stratas2 as b
-    on a.__strata = b.__strata
-    order by __match_id, __case descending, a.__id;
+      a.__match_id label = "Match ID", 
+      a.__match_date label = "Matching date", 
+      a.__case "Case (1 = yes)"
+    %if &match_inexact_vars ne %then %do;
+      %do i = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+        %let i_var = %scan(&match_inexact_vars, &i, %str( ));
+        , a.&i_var
+      %end; 
+    %end;
+ 
+    %if &keep_add_vars ne _null_ %then %do;
+      %do i = 1 %to %sysfunc(countw(&keep_add_vars, %str( )));
+        %let i_var = %scan(&keep_add_vars, &i, %str( ));
+          , b.&i_var
+      %end;
+    %end;
+      from __hm_all_matches4 as a
+      left join
+      __hm_data2(rename = (__merge_id = __tmp)) as b
+      on a.__merge_id = b.__tmp
+      order by __match_id, __case descending;
 quit;
-
-
-
-%end_of_macro:
-
-
-/* Delete temporary datasets created by the macro. */
-%if &del ne n  %then %do;
-  proc datasets nodetails nolist;
-    delete __hm_:;
-  run;
-  quit;
-%end; 
-
-/* Restore value of notes option */
-options &opt_notes;
-
-%put hash_match: end execution;
-
-%mend hash_match;
-
-
-
-
-
 
 
 /******************************************************************************
-MAKE OUTPUT WITH INFO ON PERSON WITH NO/PARTIAL MATCHES
+MAKE OUTPUT WITH INFO ON CASES WITH INCOMPLETE MATCHES
 ******************************************************************************/
-%local i i_strata;
 
 %if &verbose = y %then %do;
-  %put hash_match: *** Make output dataset with info on ids with no/partial matches ***;
+  %put hash_match: - Info on cases with incomplete matches;
 %end;
 
+/* merge __strata and keep_add_vars variables back to matched 
+data */
+%local i i_var;
 proc sql;
-  create table __hm_all_not_full_matches_id2 as
-    select a.*, b.__start, b.__end
-      from __hm_all_not_full_matches_id1 as a
-      left join
-      __hm_data2(rename = (__strata = __temp)) as b
-      on a.__strata = b.__temp and a.__id = b.__id;
-quit;
-
-proc sql;
-  create table &out_pf._no_matches(
-      rename = (
-        __index = &match_date __id = &id_var   
-        __start = &fu_start
-        __end = &fu_end 
-    )) as
-    select
+  create table &out_pf._incomp_info as
+    select  
     %if &match_stratas ne __dummy_strata %then %do;
       %do i = 1 %to %sysfunc(countw(&match_stratas, %str( )));
-        %let i_strata = %scan(&match_stratas, &i, %str( ));
-        b.&i_strata,
+        %let i_var = %scan(&match_stratas, &i, %str( ));
+        b.&i_var,
       %end;
     %end;
-    a.__id, a.__start, a.__end, a.__index, a.__n label = "Number of matched controls"
-      from __hm_all_not_full_matches_id2 as a
+      a.__match_date label = "Matching date",
+      a.__controls label = "Number of matched controls"
+    %if &match_inexact_vars ne %then %do;
+      %do i = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+        %let i_var = %scan(&match_inexact_vars, &i, %str( ));
+        , a.&i_var
+      %end; 
+    %end;
+    %if &keep_add_vars ne _null_ %then %do;
+      %do i = 1 %to %sysfunc(countw(&keep_add_vars, %str( )));
+        %let i_var = %scan(&keep_add_vars, &i, %str( ));
+          , b.&i_var
+      %end;
+    %end;
+      from __hm_all_incomp_info1 as a
       left join
-      __hm_stratas2 as b
-      on a.__strata = b.__strata
-      order by a.__id;
+      __hm_data2(rename = (__merge_id = __tmp)) as b
+      on a.__merge_id = b.__tmp
+      order by b.__strata, a.__merge_id;
 quit;
 
 
@@ -1064,93 +1076,103 @@ MAKE OUTPUT WITH INFO
 ******************************************************************************/
 
 %if &verbose = y %then %do;
-  %put hash_match: *** Make output dataset with info ***;
+  %put hash_match: - Matching info;
 %end;
 
-/* Count times id used as control in each matched set in each strata, and then
-summarize distribution by percentiles. */
+/* Count the number of times each person has been used as control in each 
+matched set in each strata, and then summarize distribution by percentiles. */
 proc means data = __hm_all_matches2_controls nway noprint;
-  class __strata __match_id __id;
-  output out = __hm_n_id_match_1(drop = _freq_ _type_) 
-    n(__strata) = n_id_match / noinherit;
+  class __strata __match_id __merge_id;
+  output out = __hm_info_cnt_match1(drop = _freq_ _type_) 
+    n(__strata) = __cnt_id / noinherit;
 run;
 
-proc means data = __hm_n_id_match_1 nway noprint;
+proc means data = __hm_info_cnt_match1 nway noprint;
   class __strata;
-  output out = __hm_n_id_match_2(drop = _freq_ _type_)
-    min(n_id_match) =
-    p25(n_id_match) = 
-    p50(n_id_match) =
-    p75(n_id_match) =
-    max(n_id_match) = / noinherit autoname;
+  output out = __hm_info_cnt_match2(drop = _freq_ _type_)
+    p50(__cnt_id) = __p50_n_id_match
+    p99(__cnt_id) = __p99_n_id_match
+    max(__cnt_id) = __max_n_id_match
+      / noinherit;
 run;
 
 /* Count times id used as control in each strata. Summarize distribution
 by percentiles. */
-proc means data = __hm_n_id_match_1 nway noprint;
-  class __strata __id;
-  output out = __hm_n_id_strata_1(drop = _freq_ _type_) 
-    sum(n_id_match) = n_id_strata / noinherit;
+proc means data = __hm_info_cnt_match1 nway noprint;
+  class __strata __merge_id;
+  output out = __hm_info_cnt_strata1(drop = _freq_ _type_) 
+    sum(__cnt_id) = __cnt_id / noinherit;
 quit;
 
-proc means data = __hm_n_id_strata_1 nway noprint;
+proc means data = __hm_info_cnt_strata1 nway noprint;
   class __strata;
-  output out = __hm_n_id_strata_2(drop = _freq_ _type_)
-    min(n_id_strata) =
-    p25(n_id_strata) = 
-    p50(n_id_strata) =
-    p75(n_id_strata) =
-    max(n_id_strata) = / noinherit autoname;
+  output out = __hm_info_cnt_strata2(drop = _freq_ _type_)
+    p50(__cnt_id) = __p50_n_id_strata
+    p99(__cnt_id) = __p99_n_id_strata
+    max(__cnt_id) = __max_n_id_strata
+      / noinherit;
 run;
 
-/* find info on how many matches were made */
-data __hm_n_no_matches1;
-  set __hm_all_not_full_matches_id1;
-  partial_match  = (__n > 0);
-  no_match = (partial_match = 0);
+/* find info on how many incomplete matches were made */
+data __hm_info_incomp1;
+  set __hm_all_incomp_info1;
+  __partial_match  = (__controls > 0);
+  __no_match = (__controls = 0);
+  keep __strata __partial_match __no_match;
 run;
 
-proc means data = __hm_n_no_matches1 noprint nway;
+proc means data = __hm_info_incomp1 noprint nway;
   class __strata;
-  output out = __hm_n_no_matches2(drop = _type_ _freq_)
-    sum(partial_match no_match) = n_partial_match n_no_match
+  output out = __hm_info_incomp2(drop = _type_ _freq_)
+    sum(__partial_match __no_match) = __n_partial_match __n_no_match
     / noinherit autoname;   
 run;
 
-data __hm_info2;
-  merge __hm_info1 __hm_n_no_matches2;
+%local i i_var;
+data &out_pf._match_info;
+  /* Use retain statement to order variables */
+  retain 
+    %do i = 1 %to %sysfunc(countw(&match_stratas, %str( )));
+      %let i_var = %scan(&match_stratas, &i, %str( ));
+      &i_var
+    %end;
+    __n_cases __n_full_match __n_partial_match __n_no_match
+    __n_potential_controls __highest_tries __max_tries
+    __start __stop __run_time
+  ;
+  merge 
+    __hm_stratas2 
+    __hm_all_info1 
+    __hm_info_incomp2
+    __hm_info_cnt_match2
+    __hm_info_cnt_strata2;
   by __strata;
-  if n_partial_match = . then n_partial_match = 0;
-  if n_no_match = . then n_no_match = 0;
-  n_full_match = __n_cases - n_partial_match - n_no_match;
-run;
 
-data &out_pf._info;
-  merge __hm_stratas2 
-        __hm_info2 
-        __hm_n_id_match_2 
-        __hm_n_id_strata_2;
-  drop __strata __start __end 
-      %if &match_stratas = __dummy_strata %then %do; __dummy_strata %end; 
-      ;
+  /* Set values to zero for empty stratas. */
+  if __n_partial_match = . then __n_partial_match = 0;
+  if __n_no_match = . then __n_no_match = 0;
+  __n_full_match = __n_cases - __n_partial_match - __n_no_match;
+
   label 
     __n_cases = "Number of cases"
     __n_potential_controls = "Number of potential controls"
-    __time_sec = "Run-time in seconds"
-    __max_attempts = "Maximum attempts that will be attempted to find all matches for a case"
-    __max_cnt = "Actual largest needed attempts needed to find all matches for a case"
-    n_partial_match = "Number of cases where only a partial amount of controls could be found"
-    n_no_match = "Number of cases for which no controls could be found"
-    n_full_match = "Number of cases for which all controls could be found"
+    __run_time = "Run-time (tt:mm:ss)"
+    __max_tries = "Maximum attempts that will be attempted to find all matches for a case"
+    __highest_tries = "Actual largest needed attempts needed to find all matches for a case"
+    __n_partial_match = "Number of cases where only a partial amount of controls could be found"
+    __n_no_match = "Number of cases for which no controls could be found"
+    __n_full_match = "Number of cases for which all controls could be found"
   ;
+  drop __strata;
+  %if &match_stratas = __dummy_strata %then %do; drop __dummy_strata; %end; 
 run;
+
 
 
 %end_of_macro:
 
 
-/* Delete temporary datasets created by the macro, also when 
-"del" has not be specified as either y or n. */
+/* Delete temporary datasets created by the macro. */
 %if &del ne n  %then %do;
   proc datasets nodetails nolist;
     delete __hm_:;
