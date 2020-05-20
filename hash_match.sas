@@ -21,12 +21,12 @@ in_ds:          (libname.)member-name of input dataset with source population.
 out_pf:         (libname.)member-name prefix of output datasets. The following
                 datasets are created by the macro:
                 <out_pf>_matches: Matched population. Note that the matched
-                population also includes matched sets, where not all of the
+                population also includes matched sets where only some of the
                 desired number of controls could be found.
                 <out_pf>_incomp_info: Information on cases for which 
                 incomplete, ie no or only some matches could be found.
                 <out_pf>_match_info: Miscellaneous information and 
-                diagnostics on the results of the matching.
+                diagnostics on the results of the matching procedure.
 match_date:     Date, if any, the person/case is to be matched with
                 a set of controls. Must be a numeric variable.
 *** OPTIONAL ***
@@ -60,13 +60,13 @@ replace:        Match with replacement:
                 controls are selected at random from the hash-table during
                 matching. See code for more information.
 keep_add_vars:  Space-separated list of additional variables from the input 
-                to include in the <out_pf>_matches output dataset. Variables 
+                to include in the output datasets. Variables 
                 specified in other macro parameters are automatically kept 
                 and does not need to be specified, the exception being the
-                variable specified in <match_date> that not included in its
+                variable specified in <match_date> that's not included in its
                 original form in the output, and any variables used in 
-                <where>. All variables from
-                the input dataset can be kept using keep_add_vars = _all_.
+                <where>. All variables from the input dataset can be kept 
+                using keep_add_vars = _all_.
                 Default is keep_add_vars = _null_, ie keep no additional 
                 variables.
 where:          Condition used to to restrict the input dataset in a where-
@@ -76,7 +76,7 @@ by:             Space-separated list of by variables. Default is by = _null_,
                 ie no by variables. 
 limit_tries:    The maximum number of tries to find all matches for each
                 case is defined as
-                 max_tries = min(<n_controls> * n_99pct, <limit_tries>)
+                  max_tries = min(<n_controls> * n_99pct, <limit_tries>)
                 where 
                   n_99pct = round(k*[log(k)- ln(-ln(p))]), p = 0.99
                 is the approximate number of tries needed to have a 
@@ -93,7 +93,7 @@ limit_tries:    The maximum number of tries to find all matches for each
                 probability-of-picking-each-of-m-elements-at-least-once-after-
                 n-trials.
 seed:           Seed used for random number generation. Default is seed = 0,
-                ie a random non-reproducible seed is used.
+                ie a random seed is used.
 print_notes:    Print notes in log?
                 - Yes: print_notes = y
                 - No:  print_notes = n (default)
@@ -208,7 +208,7 @@ and that each variable name has length of 25 or less. */
   %let i_var = %scan(&vars, &i, %str( ));
   /* Regular expression: variable must start with a letter or underscore,
   followed by 0-24 letters, numbers or underscores. The whole regular 
-  expression is case-insentitive. */
+  expression is case-insensitive. */
   %do j = 1 %to %sysfunc(countw(&&&i_var, %str( )));
     %let j_var = %scan(&&&i_var, &j, %str( ));
     %if %sysfunc(prxmatch('^[\w][\w\d]{0,24}$', &j_var)) = 0 %then %do;
@@ -285,7 +285,7 @@ Regular expression: (lib-name.)member-name, where the libname is
 optional. The libname must start with a letter, followed by 0-7 letters, 
 numbers or underscores and must end with a ".". Member-name part must start
 with a letter or underscore, and is followed by 0-19 letters ,numbers or 
-underscores. The whole regular expression is case-insentitive. */
+underscores. The whole regular expression is case-insensitive. */
 %if %sysfunc(prxmatch('^([a-z][\w\d]{0,7}\.)*[\w][\w\d]{0,19}$', &out_pf)) = 0 
   %then %do;
   %put ERROR: Specified "out_pf" output prefix "&out_pf" is either invalid;
@@ -400,7 +400,7 @@ correctly. */
 %end;
 
 /* keep_add_vars check: if more than one variable is specified, make sure 
-that _null_ and/or _all_ are not among the specifed variables. */
+that _null_ and/or _all_ are not among the specified variables. */
 %if %sysevalf(%sysfunc(countw(&keep_add_vars, %str( ))) > 1) %then %do;
   %if (_all_ in %lowcase(&keep_add_vars)) or 
       (_null_ in %lowcase(&keep_add_vars)) %then %do;
@@ -738,7 +738,7 @@ options nonotes;
           %end;
         );
 
-        /* Initalize a match id variable */
+        /* Initialize the match id variable */
         retain __match_id 0;
 
         /* Make variable to keep track of the actual highest number of 
@@ -793,7 +793,7 @@ options nonotes;
       end;
     run;
 
-    /* If the mathcing results in any warnings or errors,
+    /* If the matching results in any warnings or errors,
     the macro is terminated. */
     %if &syserr ne 0 %then %do;
       %put ERROR- Matching resulted in a warning or error!;
@@ -886,7 +886,7 @@ options nonotes;
   options notes;
 %end;
 
-/* If there eare no cases at all in the data, a warning is printed in the log
+/* If there are no cases at all in the data, a warning is printed in the log
 and the macro will not try to produce output datasets since its meaningless. */
 %local n_cases_total;
 proc sql noprint;
@@ -1116,16 +1116,16 @@ run;
 /* find info on how many incomplete matches were made */
 data __hm_info_incomp1;
   set __hm_all_incomp_info1;
-  __partial_match  = (__controls > 0);
-  __no_match = (__controls = 0);
-  keep __strata __partial_match __no_match;
+  __some_matches  = (__controls > 0);
+  __no_matches = (__controls = 0);
+  keep __strata __some_matches __no_matches;
 run;
 
 proc means data = __hm_info_incomp1 noprint nway;
   class __strata;
   output out = __hm_info_incomp2(drop = _type_ _freq_)
-    sum(__partial_match __no_match) = __n_partial_match __n_no_match
-    / noinherit autoname;   
+    sum(__some_matches __no_matches) = __n_some_matches __n_no_matches
+    / noinherit;   
 run;
 
 %local i i_var;
@@ -1136,7 +1136,7 @@ data &out_pf._match_info;
       %let i_var = %scan(&match_stratas, &i, %str( ));
       &i_var
     %end;
-    __n_cases __n_full_match __n_partial_match __n_no_match
+    __n_cases __n_full_matches __n_some_matches __n_no_matches
     __n_potential_controls __highest_tries __max_tries
     __start __stop __run_time
   ;
@@ -1149,9 +1149,9 @@ data &out_pf._match_info;
   by __strata;
 
   /* Set values to zero for empty stratas. */
-  if __n_partial_match = . then __n_partial_match = 0;
-  if __n_no_match = . then __n_no_match = 0;
-  __n_full_match = __n_cases - __n_partial_match - __n_no_match;
+  if __n_some_matches = . then __n_some_matches = 0;
+  if __n_no_matches = . then __n_no_matches = 0;
+  __n_full_matches = __n_cases - __n_some_matches - __n_no_matches;
 
   label 
     __n_cases = "Number of cases"
@@ -1159,9 +1159,9 @@ data &out_pf._match_info;
     __run_time = "Run-time (tt:mm:ss)"
     __max_tries = "Maximum attempts that will be attempted to find all matches for a case"
     __highest_tries = "Actual largest needed attempts needed to find all matches for a case"
-    __n_partial_match = "Number of cases where only a partial amount of controls could be found"
-    __n_no_match = "Number of cases for which no controls could be found"
-    __n_full_match = "Number of cases for which all controls could be found"
+    __n_some_matches = "Number of cases where only a some, not all, controls could be found"
+    __n_no_matches = "Number of cases for which no controls could be found"
+    __n_full_matches = "Number of cases for which all controls could be found"
   ;
   drop __strata;
   %if &match_stratas = __dummy_strata %then %do; drop __dummy_strata; %end; 

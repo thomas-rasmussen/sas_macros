@@ -9,11 +9,16 @@ Matching using a hash-table merge approach
 
 **Version 0.3.0**
 
-- Inexact matching can now be done using the match_inexact parameter. As a 
-result of this new feature several things have changed that are not 
-backwards-compatible. See documentation and examples for how to use this new 
-version of the macro.
+- Inexact matching can now be done using the match_inexact parameter. 
 
+- Extensive changes to how the macro work to make the match_inexact parameter
+a natural part of using the macro. 
+
+- Overhaul of used terminology. Hopefully it is now more clear how the macro works.
+
+- Made a new set of examples that highlight the flexibility of the match_inexact 
+parameter, but also highlight that mistakes can easily be made that are not
+necessarily easy to see.
 
 
 **Version 0.2.1**
