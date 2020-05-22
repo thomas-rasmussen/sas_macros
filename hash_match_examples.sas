@@ -78,7 +78,7 @@ Such standard matching conditions can be specified using the match_exact and
 match_inexact parameters. Variables on which exact matching is done is
 given as a space-separated list. Inexact matching conditions are 
 given as a masked character string. The matching is done with a hash-table merge,
-where the cases are in a dataset, and the potential controls are stored in the
+where the cases are in a dataset, and the potential controls are stored in a
 hash-table, where all variables are given a "_ctrl_" prefix (Think of it as a
 normal merge of two datasets in a data-step). Comparison of case and control 
 values can now be done as shown in the macro call below: */
@@ -99,7 +99,60 @@ values can now be done as shown in the macro call below: */
 /* Note that all the variables we are using are included in output dataset
 with the matched population. */
 
+/* We should always check that the matching criterias are acutally
+fulfilled in the matched population. */
+data standard_check1;
+  set standard_matches;
+  by __match_id;
+  retain
+    case_male case_id case_index_date case_fu_start case_fu_stop 
+    case_disease_date
+    fail_male fail_id fail_fu fail_not_case fail_not_diseased;
+  if first.__match_id then do;
+    /* Retain case variable values */
+    case_male = male;
+    case_id = id;
+    case_index_date = index_date;
+    case_fu_start = fu_start;
+    case_fu_stop = fu_stop;
+    case_disease_date = disease_date;
+    /* Reset number of failed conditions */
+    fail_male = 0;
+    fail_id = 0;
+    fail_fu = 0;
+    fail_not_case = 0;
+    fail_not_diseased = 0;
+  end;
+  else do;
+    if case_male ne male then fail_male = 1;
+    if case_id = id then fail_id = 1;
+    if (fu_start <= case_index_date <= fu_stop) = 0 then fail_fu = 1;
+    if (index_date > case_index_date or index_date = .) = 0
+      then fail_not_case = 1;
+    if (disease_date > case_index_date or disease_date = .) = 0
+      then fail_not_diseased = 1;
+  end;
+  if last.__match_id;
+  keep fail_:;
+run;
 
+proc means data = standard_check1 sum;
+  var fail_:;
+run;
+
+/*
+        The MEANS Procedure
+
+ Variable                      Sum
+
+ fail_male                       0
+ fail_id                         0
+ fail_fu                         0
+ fail_not_case                   0
+ fail_not_diseased               0
+ 
+
+*/
 /*******************************************************************************
 ADVANCED USE
 *******************************************************************************/
@@ -153,20 +206,71 @@ of _ctrl_fu_start as _ctrl_fu_starts. */
   seed = 1
 );
 
-/* Looking at the output we can see that the fu_start <= index_date condition
-does not hold as intended, and no warning or error was produced by the macro
-informing us that we have specified a variable that does not exist in the data.
-What has happend is that a _ctrl_fu_starts variable has been created in the 
-hash-table that always has a missing value, making the 
-_ctrl_fu_starts <= index_date condition always true. 
+/* No warning or error was produced by the macro informing us that we have 
+specified a variable that does not exist in the data. What has happend is that 
+a _ctrl_fu_starts variable has been created in the hash-table that always has a 
+missing value, making the _ctrl_fu_starts <= index_date condition always true. */
 
-Always check that the matching was done as intended. */
+/* If we check whether or not the matching conditions are fullfilled in the
+matched data, as we should, we can also easily see that the matching
+creterias are not working as intended. */
+data misspell_check1;
+  set misspell_matches;
+  by __match_id;
+  retain
+    case_male case_id case_index_date case_fu_start case_fu_stop 
+    case_disease_date
+    fail_male fail_id fail_fu fail_not_case fail_not_diseased;
+  if first.__match_id then do;
+    /* Retain case variable values */
+    case_male = male;
+    case_id = id;
+    case_index_date = index_date;
+    case_fu_start = fu_start;
+    case_fu_stop = fu_stop;
+    case_disease_date = disease_date;
+    /* Reset number of failed conditions */
+    fail_male = 0;
+    fail_id = 0;
+    fail_fu = 0;
+    fail_not_case = 0;
+    fail_not_diseased = 0;
+  end;
+  else do;
+    if case_male ne male then fail_male = 1;
+    if case_id = id then fail_id = 1;
+    if (fu_start <= case_index_date <= fu_stop) = 0 then fail_fu = 1;
+    if (index_date > case_index_date or index_date = .) = 0
+      then fail_not_case = 1;
+    if (disease_date > case_index_date or disease_date = .) = 0
+      then fail_not_diseased = 1;
+  end;
+  if last.__match_id;
+  keep fail_:;
+run;
+
+proc means data = misspell_check1 sum;
+  var fail_:;
+run;
+
+/*
+        The MEANS Procedure
+
+ Variable                      Sum
+ 
+ fail_male                       0
+ fail_id                         0
+ fail_fu               935.0000000
+ fail_not_case                   0
+ fail_not_diseased               0
+ 
+*/
 
 
 /* Alternatively a misspelling can result in a condition that is always false.
 This will most likely result in the macro taking a very long time to execute
 since we are using the maximum amount of tries to find controls for each case
-bofore giving up. For example imagine that we accidentally wrote _ctrl_fu_end 
+bofore giving up. For example, imagine that we accidentally wrote _ctrl_fu_end 
 instead of _ctrl_fu_stop (actually happened while making these examples....). 
 The index_date <= _ctrl_fu_end condition would always be false, since index_date 
 is never missing for cases and _ctrl_fu_end is always missing (since the 
@@ -194,7 +298,7 @@ instead included in the dataset with cases with incomplete controls,
 and in the dataset with matching info we can see that zero controls
 was found for all cases. 
 
-If the log does not show any or only very slow progress of the matching,
+If the log does not show any, or only very slow progress of the matching,
 consider if something is wrong. */
 
 
