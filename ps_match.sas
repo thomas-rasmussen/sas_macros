@@ -2,8 +2,6 @@
 *	AUTHOR:       Thomas Bøjer Rasmussen (TBR)
 * VERSION:      1.0
 * DATE:         2019-03-07
-* LICENCE:      Creative Commons CC0 1.0 Universal  
-*               (https://www.tldrlegal.com/l/cc0-1.0)
 *
 * Accompanying examples and tests, version notes etc. can be found at:
 * https://github.com/thomas-rasmussen/sas_macros

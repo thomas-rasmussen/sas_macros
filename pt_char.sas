@@ -2,8 +2,6 @@
 AUTHOR:     Thomas Boejer Rasmussen
 VERSION:    0.2.1
 DATE:       2020-03-28
-LICENCE:    Creative Commons CC0 1.0 Universal  
-            (https://www.tldrlegal.com/l/cc0-1.0)
 ********************************************************************************
 DESCRIPTION:
 Produces a so-called "table 1" with aggregated patient characteristics based 

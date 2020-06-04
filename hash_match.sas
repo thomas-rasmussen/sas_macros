@@ -1,8 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
 VERSION:    0.3.0
-LICENCE:    Creative Commons CC0 1.0 Universal  
-            (https://www.tldrlegal.com/l/cc0-1.0)
 ********************************************************************************
 DESCRIPTION:
 Matching using a hash-table merge approach. The input dataset is expected to be 

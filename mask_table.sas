@@ -2,8 +2,6 @@
 AUTHOR:     Thomas Boejer Rasmussen
 VERSION:    0.1.1
 DATE:       2020-04-15
-LICENCE:    Creative Commons CC0 1.0 Universal  
-            (https://www.tldrlegal.com/l/cc0-1.0)
 ********************************************************************************
 DESCRIPTION:
 Masks/suppresses/censors a table of aggregated counts, if the table contains
