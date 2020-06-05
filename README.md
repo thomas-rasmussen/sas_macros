@@ -1,9 +1,9 @@
-# SAS macros
+## SAS macros
 
 A collection of SAS macros with accompanying examples and tests. 
 
 
-## hash_match
+### hash_match
 
 Matching using a hash-table merge approach
 
@@ -52,7 +52,7 @@ Should work as intended, but should be used with caution.
 
 
 
-## mask_table
+### mask_table
 
 Masks/suppresses/censors a table of aggregated counts, if the table contains
 counts that are deemed person-sensitive.
@@ -71,7 +71,7 @@ pt_char it might still be easy to modify it so that it can be used with the
 macro. See examples. 
 
 
-## ps_match
+### ps_match
 
 Efficient propensity score pair matching using a hash-table merge.
 
@@ -80,7 +80,7 @@ Efficient propensity score pair matching using a hash-table merge.
 First version. Based on macros used in previous projects.
 
 
-## pt_char
+### pt_char
 
 Produces a so-called "table 1" with aggregated patient characteristics
 
@@ -114,6 +114,6 @@ Produces a so-called "table 1" with aggregated patient characteristics
   
 
 
-# Contributors
+## Acknowledgments
 
-David Nagy (divaDseidnA)
+Special thanks to David Nagy (divaDseidnA) for feedback on the hash_match macro.
