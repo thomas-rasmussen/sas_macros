@@ -52,7 +52,8 @@ macro needs. */
 %hash_match(
   in_ds = sourcepop,
   out_pf = simple,
-  match_date = index_date
+  match_date = index_date,
+  seed = 1
 );
 
 /* Note that the output datasets does not include unused variables from the

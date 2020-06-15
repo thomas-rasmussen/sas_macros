@@ -501,3 +501,36 @@ also length 33 or more. */
   match_date  = index_num,
   by          = variable_name_length_26___ 
 );
+
+
+/* Test that macro correctly handles edge case where the first matching
+strata has no cases */
+data __data1;
+  male = 0;
+  index_date = .;
+  var1 = 1;
+  var2 = 2;
+  output;
+  male = 1;
+  index_date = 1;
+  var1 = 2;
+  var2 = 3;
+  output;
+run;
+  
+%hash_match(
+  in_ds = __data1,
+  out_pf = __out1,
+  match_date = index_date,
+  match_exact = male
+);
+
+
+%hash_match(
+  in_ds = __data1,
+  out_pf = __out1,
+  match_date = index_date,
+  match_exact = male,
+  match_inexact = %str(var1 ne 1 and var2 ne _ctrl_var2)
+);
+

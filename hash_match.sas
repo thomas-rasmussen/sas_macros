@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.3.0
+VERSION:    0.3.1
 ********************************************************************************
 DESCRIPTION:
 Matching using a hash-table merge approach. The input dataset is expected to be 
@@ -123,7 +123,6 @@ del:            Delete intermediate datasets created by the macro:
 
 %put hash_match: start execution;
 
-%put %bquote(&match_inexact);
 
 /* find value of notes option, save it, then disable notes */
 %local opt_notes;
@@ -804,22 +803,59 @@ options nonotes;
   /* If no cases or no potential controls create an empty dataset. */
   %else %do;
     data __hm_strata_matches;
-      format __match_id best12.;
+      length
+        %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+          %let j_var = %scan(&match_inexact_vars, &j, %str( ));
+          _ctrl_&j_var &&&j_var._length
+        %end;
+      ;
+      format _ctrl___merge_id __match_id best12.
+        %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+          %let j_var = %scan(&match_inexact_vars, &j, %str( ));
+          _ctrl_&j_var &&&j_var._format
+        %end;
+      ;
       set __hm_strata_cases(obs = 0);
     run;
 
     data __hm_strata_incomp_info;
-      set __hm_strata_cases(obs = 0);
+      length
+        %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+          %let j_var = %scan(&match_inexact_vars, &j, %str( ));
+          &j_var &&&j_var._length
+        %end;
+        ;
+    	format __controls best12.
+        %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
+          %let j_var = %scan(&match_inexact_vars, &j, %str( ));
+          &j_var &&&j_var._format
+        %end;
+        ;
+        set __hm_strata_cases(obs = 0);
     run;
   %end;
 
-  /* Append matches from strata to dataset with all matches. */
-  proc append base = __hm_all_matches1 data = __hm_strata_matches;
-  run;
+  /* In some weird cases, using proc append to automatically create the
+  base dataset if it does not exist will fail. Therefore we will explictly
+  define it here, to make sure everything works as intended. */
+  %if &i = 1 %then %do;
+    data __hm_all_matches1;
+      set __hm_strata_matches;
+    run;
+    
+    data __hm_all_incomp_info1;
+      set __hm_strata_incomp_info;
+    run;
+  %end;
+  %else %do;
+    /* Append matches from strata to dataset with all matches. */
+    proc append base = __hm_all_matches1 data = __hm_strata_matches;
+    run;
 
-  /* Append cases for which not all matches could be found. */
-  proc append base = __hm_all_incomp_info1 data = __hm_strata_incomp_info;
-  run;
+    /* Append cases for which not all matches could be found. */
+    proc append base = __hm_all_incomp_info1 data = __hm_strata_incomp_info;
+    run;
+  %end;
 
   %local time_stop duration;
   %let time_stop = %sysfunc(datetime());
@@ -860,9 +896,16 @@ options nonotes;
   run;
 
   /* Append strata diagnostics. */
-  proc append base = __hm_all_info1 data = __hm_strata_info;
-  run;
-  
+  %if &i = 1 %then %do;
+    data __hm_all_info1;
+      set __hm_strata_info;
+    run;
+  %end;
+  %else %do;
+    proc append base = __hm_all_info1 data = __hm_strata_info;
+    run;
+  %end;
+ 
   /* Print matching progress info to log. */
   %local j j_strata j_pct;
   %do j = 1 %to %sysfunc(countw(&progress_strata, $));
