@@ -4,6 +4,11 @@
 
 Matching using a hash-table merge approach
 
+**Version 0.3.1**
+
+- Fixed bug outlined in issue #7.
+
+
 **Version 0.3.0**
 
 - Inexact matching can now be done using the match_inexact parameter. 
