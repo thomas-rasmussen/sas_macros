@@ -4,6 +4,9 @@
 
 Matching using a hash-table merge approach
 
+**Version 0.3.2**
+
+
 **Version 0.3.1**
 
 - Fixed a bug where the macro would fail in certain scenarios if no potential controls exists.
