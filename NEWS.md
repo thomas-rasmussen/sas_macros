@@ -6,7 +6,7 @@ Matching using a hash-table merge approach
 
 **Version 0.3.1**
 
-- Fixed bug outlined in issue #7.
+- Fixed a bug where the macro would fail in certain scenarios if no potential controls exists.
 
 
 **Version 0.3.0**
