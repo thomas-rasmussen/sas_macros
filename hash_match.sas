@@ -50,13 +50,19 @@ match_inexact:  Inexact matching conditions. Use the %str function to
 n_controls:     Number of controls to match to each case. 
                 Default is n_controls = 10.
 replace:        Match with replacement:
-                - Yes: replace = y (default)
-                - No:  replace = n  
-                Note: Matching without replacement is less efficient (but
-                still fast) when the control to case ratio is small. The
-                reason for this is very technical and has to do with how 
-                controls are selected at random from the hash-table during
-                matching. See code for more information.
+                - Yes:    replace = y (default)
+                - No:     replace = n  
+                - Mixed : replace = m
+                Matching with "mixed" replacement (replace = m) means that
+                matching is done without replacement for each case, but with
+                replacement between cases, ie a person can be a control for 
+                more than one case, but can only be used as a control once
+                for each of them.
+                Note: Matching without replacement is less efficient when 
+                the control/case ratio is small, and extreme cases can be
+                very slow. The reason for this is technical and has to do 
+                with how controls are selected at random from the hash-table 
+                during matching. See code for more information.
 keep_add_vars:  Space-separated list of additional variables from the input 
                 to include in the output datasets. Variables 
                 specified in other macro parameters are automatically kept 
@@ -363,17 +369,19 @@ one or more digits (so that 0 is not allowed, but eg 10 is). */
   %goto end_of_macro; 
 %end;
 
-/* Check that the replace and del macro parameters are specified 
-correctly. */
-%local parms i i_parm;
-%let parms = replace del;            
-%do i = 1 %to %sysfunc(countw(&parms, %str( )));
-  %let i_parm = %scan(&parms, &i, %str( ));
-  %if %eval(&&&i_parm in n y) = 0 %then %do;
-    %put ERROR: "&i_parm" does not have a valid value!;
-    %goto end_of_macro;
-  %end;
+/* Check that the replace parameter is specified correctly */
+%if %eval(&replace in n y m) = 0 %then %do;
+  %put ERROR: "replace" does not have a valid value!;
+  %goto end_of_macro;
 %end;
+
+
+/* Check that the the del parameter is specified correctly. */          
+%if %eval(&del in n y) = 0 %then %do;
+  %put ERROR: "del" does not have a valid value!;
+  %goto end_of_macro;
+%end;
+
 
 %if &verbose = y %then %do;
   %put hash_match: - Input value of keep_add_vars:; 
@@ -699,13 +707,23 @@ options nonotes;
     run;
 
     %local j j_var;
-    data __hm_strata_matches(drop = __hash_key __stop __controls __tries __rand_obs __rc __highest_tries)
-         __hm_strata_incomp_info(keep = __merge_id __match_date __strata __controls &match_inexact_vars);
+    data  __hm_strata_matches(
+            drop = __hash_key __stop __controls __tries __rand_obs __rc 
+                   __highest_tries 
+                   %if &replace = m %then %do; __list_controls %end;           
+          )
+          __hm_strata_incomp_info(
+            keep = __merge_id __match_date __strata __controls 
+                   &match_inexact_vars
+          );
     	call streaminit(&seed);
     	length	__hash_key _ctrl___merge_id 8 
         %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
           %let j_var = %scan(&match_inexact_vars, &j, %str( ));
           _ctrl_&j_var &&&j_var._length
+        %end;
+        %if &replace = m %then %do;
+          __list_controls $%eval(&n_controls * 20)
         %end;
         ;
     	format	__hash_key _ctrl___merge_id best12. 
@@ -751,6 +769,7 @@ options nonotes;
     	__controls = 0;
     	__tries = 0;
       __match_id + 1;
+      %if &replace = m %then %do; __list_controls = ""; %end;  
 
     	do while (__stop = 0);
     		__tries + 1;
@@ -762,15 +781,23 @@ options nonotes;
       		__rc = h.find(key:__rand_obs);
     		/* Check if key exists and if valid control. */
         if __rc = 0 
+          %if &replace = m %then %do;
+            and findw(__list_controls, put(__rand_obs, best12.), " ", "er") = 0
+          %end;
           %if %bquote(&match_inexact) ne %then %do;
             and &match_inexact
           %end;
     		then do;
     			__controls + 1; 	
-          /* If matching without replacemnt, remove matched control
+          /* If matching without replacement, remove matched control
           from hash-table. */
           %if &replace = n %then %do;
             __rc = h.remove(key: __rand_obs);
+          %end;
+          /* If matching with mixed replacement, add id to list of
+          ids already used as controls */
+          %if &replace = m %then %do;
+            __list_controls = catx(" ", __list_controls, put(__rand_obs, best12.));
           %end;
           /* Output matched control. */
           output __hm_strata_matches;

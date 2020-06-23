@@ -534,3 +534,23 @@ run;
   match_inexact = %str(var1 ne 1 and var2 ne _ctrl_var2)
 );
 
+
+/* Test that replace = m works as intended */
+
+data __data1;
+  id = 1; index_date = 1; output;
+  id = 2; index_date = 1; output;
+  id = 3; index_date = .; output;
+  id = 4; index_date = .; output;
+run;
+    
+option notes;
+%hash_match(
+  in_ds = __data1,
+  out_pf = __out1,
+  match_date = index_date,
+  match_inexact = %str(id ne _ctrl_id),
+  seed = 1,
+  replace = m
+);
+

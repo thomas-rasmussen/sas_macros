@@ -6,6 +6,7 @@ Matching using a hash-table merge approach
 
 **Version 0.3.2**
 
+- Matching with "mixed" replacement can now be done using replace = m, see documentation.
 
 **Version 0.3.1**
 
