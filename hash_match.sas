@@ -679,6 +679,32 @@ options nonotes;
     %end;
   run;
 
+  /* Find available memory in session. Taken from
+  https://sasnrd.com/sas-available-memory/
+  The xmrlmem option is undocumented, and I don't understand why
+  10e6 and not 1024**3 is the proper denominator... But it is clear from
+  testing that 1024**3 gives the wrong answer. */
+  %local avail_mem;
+  data _null_;
+    call symput("avail_mem", input(getoption('xmrlmem'),20.2)/10e6);
+  run;
+
+  /* Find size of dataset with potential controls */
+  %local pot_control_size;
+  proc sql noprint;
+    select filesize / 1024**3 into :pot_control_size
+      from sashelp.vtable
+      where libname = "WORK" and memname = "__HM_STRATA_CONTROLS";
+  quit;
+
+  /* If the dataset can't fit in memory, terminate the macro. */
+  %if %eval(&pot_control_size > &avail_mem) %then %do;
+    %put ERROR: Hash-table can%str(%')t fit in memory!;
+    %put ERROR: Hash-table size: %left(%qsysfunc(putn(&pot_control_size, 20.2))) GB;
+    %put ERROR: Available memory: %left(%qsysfunc(putn(&avail_mem, 20.2))) GB;
+    %goto end_of_macro;  
+  %end;
+
   /* Find number of cases and controls in strata. */
   proc sql noprint;
     select count(*) 
@@ -821,9 +847,13 @@ options nonotes;
     the macro is terminated. */
     %if &syserr ne 0 %then %do;
       %put ERROR- Matching resulted in a warning or error!;
-      %put ERROR- Check if specified "match_inexact" condition:;
+      %put ERROR- Check the log for warnings/errors indicating that;
+      %put ERROR- 1) The specified "match_inexact" condition:;
       %put ERROR- match_inexact = &match_inexact;
-      %put ERROR- is valid.;
+      %put ERROR- is incorrect and needs to be corrected.;
+      %put ERROR- 2) The hash-table could not fit in the memory.;
+      %put ERROR- This can only be fixed by running the macro on a;
+      %put ERROR- system with more available memory. ;
       %goto end_of_macro; 
     %end;
   %end;
