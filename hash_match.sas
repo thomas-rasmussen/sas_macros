@@ -40,13 +40,18 @@ match_inexact:  Inexact matching conditions. Use the %str function to
                 macro. The <var> variables corresponds to case values, and 
                 _ctrl_<var> corresponds to (potential) control values.
                 Default is match_inexact = %str(), eg no (inexact) matching 
-                conditions are specified.
+                conditions are specified. 
                 Note that care should be taken when using this parameter.
                 Misspelling a variable name will not result in errors, and
                 it might not be obvious from the output that an error in
                 the specification has been made. Always check that the 
                 matching conditions are actually fulfilled in the output data.
                 See examples.
+inexact_vars:   By default (inexact_vars = _auto_) the macro will
+                try to guess what variables are used in the match_inexact 
+                expression. The algorithm doing this is conservative and might
+                identify too many variables. So alternatively, a 
+                space-separated list of variables can also be provided.
 n_controls:     Number of controls to match to each case. 
                 Default is n_controls = 10.
 replace:        Match with replacement:
@@ -115,6 +120,7 @@ del:            Delete intermediate datasets created by the macro:
   match_date    = ,
   match_exact   = _null_,
   match_inexact = %str(),
+  inexact_vars  = _auto_,
   n_controls    = 10,
   replace       = y,
   keep_add_vars = _null_,
@@ -175,7 +181,7 @@ INPUT PARAMETER CHECKS
 /* Check that macro parameters are not empty. */
 %local parms i i_parm;
 %let parms = 
-  in_ds out_pf match_date match_exact n_controls replace
+  in_ds out_pf match_date match_exact inexact_vars n_controls replace
   keep_add_vars by limit_tries seed del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
@@ -202,11 +208,11 @@ INPUT PARAMETER CHECKS
 %let rc = %sysfunc(close(&ds_id));
 
 /* Check specified variable names are valid, exists in the input dataset, 
-that none of the specified variables have a "__" or "_ctrl_ prefix,
+that none of the specified variables have a "__" or "_ctrl_" prefix,
 and that each variable name has length of 25 or less. */
-
 %local vars i i_var j j_var ds_id rc;
 %let vars = match_date match_exact by keep_add_vars;
+%if &inexact_vars ne _auto_ %then %let vars = &vars inexact_vars;
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
   /* Regular expression: variable must start with a letter or underscore,
@@ -277,6 +283,15 @@ quit;
 
 %if &verbose = y %then %do;
   %put hash_match:   Variables identified:;
+  %put hash_match:   &match_inexact_vars;
+%end;
+
+/* If inexact_vars ne _auto_ we override the guessed variables with the 
+provided list */
+%if &inexact_vars ne _auto_ %then %let match_inexact_vars = &inexact_vars;
+
+%if %eval(&verbose = y and &inexact_vars ne _auto_) %then %do;
+  %put hash_match:   inexact_vars ne _auto_. Override with input:;
   %put hash_match:   &match_inexact_vars;
 %end;
 

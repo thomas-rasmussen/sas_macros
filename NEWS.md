@@ -8,6 +8,10 @@ Matching using a hash-table merge approach
 
 - Matching with "mixed" replacement can now be done using replace = m, see documentation.
 
+- Macro parameter "inexact_vars" added to macro, to make it possible to manually specify
+the exact variables used in "match_inexact" in cases where the macro incorrectly
+identifies too many.
+
 **Version 0.3.1**
 
 - Fixed a bug where the macro would fail in certain scenarios if no potential controls exists.

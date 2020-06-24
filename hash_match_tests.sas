@@ -158,6 +158,45 @@ run;
   match_inexact = %str(var_num1 net invalid)
 );
 
+/*** inexact_vars test ***/
+
+/* Check inexact_vars works as intended. */
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(var_num1 ne invalid),
+  inexact_vars  = var_num1
+);
+
+/* Check that the macro can handle superfluous variables
+and just adds them to the output */
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(var_num1 ne invalid),
+  inexact_vars  = var_num1 var_char1
+);
+
+/* Check that specifying variables not in the input dataset 
+triggers and error. */
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(var_num1 ne invalid),
+  inexact_vars  = var_num
+);
+
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(var_num1 ne invalid),
+  inexact_vars  = var_num var_num1
+);
+
 
 /*** n_control tests ***/
 
@@ -554,3 +593,4 @@ option notes;
   replace = m
 );
 
+/*
