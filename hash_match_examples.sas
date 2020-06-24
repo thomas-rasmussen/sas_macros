@@ -276,7 +276,7 @@ instead of _ctrl_fu_stop (actually happened while making these examples....).
 The index_date <= _ctrl_fu_end condition would always be false, since index_date 
 is never missing for cases and _ctrl_fu_end is always missing (since the 
 variable is not in the data and is created by the hash-table and set to missing
-as before). We use the limit_tries parameter here to limit the amount of tries 
+as before). We use the max_tries parameter here to limit the amount of tries 
 we make before giving up, so that the macro call does not take too long.
 */
 %hash_match(
@@ -290,7 +290,7 @@ we make before giving up, so that the macro call does not take too long.
       and (_ctrl_index_date > index_date or _ctrl_index_date = .)
       and (_ctrl_disease_date > index_date or _ctrl_disease_date = .)
     ),
-  limit_tries = 1000,
+  max_tries = 1000,
   seed = 1
 );
 

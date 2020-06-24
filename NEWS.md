@@ -12,6 +12,10 @@ Matching using a hash-table merge approach
 the exact variables used in "match_inexact" in cases where the macro incorrectly
 identifies too many.
 
+- The limit_tries parameter has been renamed to max_tries and the underlying way the 
+macro sets the maximum number of tries to find controls have been slightly modified to
+make it less convoluted. 
+
 **Version 0.3.1**
 
 - Fixed a bug where the macro would fail in certain scenarios if no potential controls exists.

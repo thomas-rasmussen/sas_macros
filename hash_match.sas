@@ -83,20 +83,18 @@ where:          Condition used to to restrict the input dataset in a where-
                 where = %str(var = "value").
 by:             Space-separated list of by variables. Default is by = _null_,
                 ie no by variables. 
-limit_tries:    The maximum number of tries to find all matches for each
-                case is defined as
-                  max_tries = min(<n_controls> * n_99pct, <limit_tries>)
+max_tries:      The maximum number of tries to find all matches for each
+                case. By default (max_tries = _auto_) the maximum number of
+                tries is automatically calculated as
+                  max_tries = <n_controls> * n_99pct
                 where 
                   n_99pct = round(k*[log(k)- ln(-ln(p))]), p = 0.99
                 is the approximate number of tries needed to have a 
                 99% probability (100 * p), to have tried all potential 
-                controls (k) at least once. We multiply this approximate 
-                number with <n_controls>, and we take the minimum of this 
-                number and <limit_tries>. This approach ensures that we are 
+                controls (k) at least once. This approach ensures that we are 
                 reasonably sure that we have considered all potential 
-                controls for each individual match that is made, and that we 
-                can set a upper limit. Must be a positive integer.
-                Default is limit_tries = 10**6. 
+                controls for each individual match that is made. Alternatively,
+                a positive integer can be specified.
                 n_99pct formula is from 
                 https://math.stackexchange.com/questions/1155615/
                 probability-of-picking-each-of-m-elements-at-least-once-after-
@@ -126,7 +124,7 @@ del:            Delete intermediate datasets created by the macro:
   keep_add_vars = _null_,
   where         = %str(),
   by            = _null_,
-  limit_tries   = 10**6,
+  max_tries     = _auto_,
   seed          = 0,
   print_notes   = n,
   verbose       = n,
@@ -182,7 +180,7 @@ INPUT PARAMETER CHECKS
 %local parms i i_parm;
 %let parms = 
   in_ds out_pf match_date match_exact inexact_vars n_controls replace
-  keep_add_vars by limit_tries seed del;   
+  keep_add_vars by max_tries seed del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
   %if &&&i_parm = %then %do;
@@ -368,13 +366,17 @@ one or more digits (so that 0 is not allowed, but eg 10 is). */
   %end;
 %end;
 
-/* limit_tries check: Check positive integer. limit_tries is likely to be a 
-large number which is easier to write on the form "10 ** x", so we evaluate 
-the expression given in limit_tries before checking that it is an integer.
-Regular expression: Starts with a number 1-9, followed by, and ends with,
+/* max_tries check: Check that the value is _auto_ or a positive integer. 
+If max_tries is given as a postive integer it is likely to be a large number 
+which is easier to write on the form "10 ** x", so we evaluate 
+the expression given in max_tries before checking that it is an integer.*/
+/* Regular expression: One of the following:
+1) _auto_
+2) Starts with a number 1-9, followed by, and ends with,
 one or more digits (so that 0 is not allowed, but eg 10 is). */
-%if %sysfunc(prxmatch('^[1-9]\d*$', %sysevalf(&limit_tries))) = 0 %then %do;
-  %put ERROR: "limit_tries" must be a positive integer!;
+%if &max_tries ne _auto_ %then %let max_tries = %sysevalf(&max_tries);
+%if %sysfunc(prxmatch('^_auto_$|^[1-9]\d*$', &max_tries)) = 0 %then %do;
+  %put ERROR: "max_tries" must be a positive integer or _auto_!;
   %goto end_of_macro; 
 %end;
 
@@ -734,18 +736,21 @@ options nonotes;
   find controls for each case. */
   %if &n_strata_controls > 0 and &n_strata_cases > 0 %then %do;
 
-    /* Calculate the number of tries to find controls for
-    each case. See limit_tries documentation. */
-    %local max_tries;
-    data _null_;
-   	  k = &n_strata_controls;
-      p = 0.99;
-      max_tries = min(
-        &n_controls * round(k*(log(k) - log(-log(p)))), 
-        &limit_tries
-      );
-      call symput("max_tries", put(max_tries, best12.));
-    run;
+    /* If max_tries = _auto_, calculate the number of tries to find 
+    controls for each case in this strata. See max_tries documentation. */
+    %local max_tries_strata;
+    %if &max_tries = _auto_ %then %do;
+      data _null_;
+     	  k = &n_strata_controls;
+        p = 0.99;
+        max_tries_strata = &n_controls * round(k*(log(k) - log(-log(p))));
+        call symput("max_tries_strata", put(max_tries_strata, best12.));
+      run;
+    %end;
+    /* Else set the maximum number of tries to specifid number. */
+    %else %do;
+      %let max_tries_strata = &max_tries;
+    %end;
 
     %local j j_var;
     data  __hm_strata_matches(
@@ -845,7 +850,7 @@ options nonotes;
     		end;
     		/* When we have found n_control valid controls or we reach the
         maximum number of tries we stop the loop. */ 
-    		if __controls >= &n_controls or __tries >= &max_tries then __stop = 1;
+    		if __controls >= &n_controls or __tries >= &max_tries_strata then __stop = 1;
    
         /* If we have not found the wanted number of controls for a case
         we output info on the case to a dataset. */
@@ -962,7 +967,7 @@ options nonotes;
     __start = compress(put(&time_start, datetime32.));
     __stop = compress(put(&time_stop, datetime32.));
     __run_time = compress(put(&duration, time13.));
-    __max_tries = &max_tries;
+    __max_tries = &max_tries_strata;
     __highest_tries = &highest_tries;
     output;
   run;
@@ -1270,7 +1275,7 @@ data &out_pf._match_info;
     __n_cases = "Number of cases"
     __n_potential_controls = "Number of potential controls"
     __run_time = "Run-time (tt:mm:ss)"
-    __max_tries = "Maximum attempts that will be attempted to find all matches for a case"
+    __max_tries = "Maximum tries that will be attempted to find all matches for a case"
     __highest_tries = "Actual largest needed attempts needed to find all matches for a case"
     __n_some_matches = "Number of cases where only a some, not all, controls could be found"
     __n_no_matches = "Number of cases for which no controls could be found"
