@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.3.1
+VERSION:    0.3.2
 ********************************************************************************
 DESCRIPTION:
 Matching using a hash-table merge approach. The input dataset is expected to be 
@@ -40,23 +40,34 @@ match_inexact:  Inexact matching conditions. Use the %str function to
                 macro. The <var> variables corresponds to case values, and 
                 _ctrl_<var> corresponds to (potential) control values.
                 Default is match_inexact = %str(), eg no (inexact) matching 
-                conditions are specified.
+                conditions are specified. 
                 Note that care should be taken when using this parameter.
                 Misspelling a variable name will not result in errors, and
                 it might not be obvious from the output that an error in
                 the specification has been made. Always check that the 
                 matching conditions are actually fulfilled in the output data.
                 See examples.
+inexact_vars:   By default (inexact_vars = _auto_) the macro will
+                try to guess what variables are used in the match_inexact 
+                expression. The algorithm doing this is conservative and might
+                identify too many variables. So alternatively, a 
+                space-separated list of variables can also be provided.
 n_controls:     Number of controls to match to each case. 
                 Default is n_controls = 10.
 replace:        Match with replacement:
-                - Yes: replace = y (default)
-                - No:  replace = n  
-                Note: Matching without replacement is less efficient (but
-                still fast) when the control to case ratio is small. The
-                reason for this is very technical and has to do with how 
-                controls are selected at random from the hash-table during
-                matching. See code for more information.
+                - Yes:    replace = y (default)
+                - No:     replace = n  
+                - Mixed : replace = m
+                Matching with "mixed" replacement (replace = m) means that
+                matching is done without replacement for each case, but with
+                replacement between cases, ie a person can be a control for 
+                more than one case, but can only be used as a control once
+                for each of them.
+                Note: Matching without replacement is less efficient when 
+                the control/case ratio is small, and extreme cases can be
+                very slow. The reason for this is technical and has to do 
+                with how controls are selected at random from the hash-table 
+                during matching. See code for more information.
 keep_add_vars:  Space-separated list of additional variables from the input 
                 to include in the output datasets. Variables 
                 specified in other macro parameters are automatically kept 
@@ -72,20 +83,18 @@ where:          Condition used to to restrict the input dataset in a where-
                 where = %str(var = "value").
 by:             Space-separated list of by variables. Default is by = _null_,
                 ie no by variables. 
-limit_tries:    The maximum number of tries to find all matches for each
-                case is defined as
-                  max_tries = min(<n_controls> * n_99pct, <limit_tries>)
+max_tries:      The maximum number of tries to find all matches for each
+                case. By default (max_tries = _auto_) the maximum number of
+                tries is automatically calculated as
+                  max_tries = <n_controls> * n_99pct
                 where 
                   n_99pct = round(k*[log(k)- ln(-ln(p))]), p = 0.99
                 is the approximate number of tries needed to have a 
                 99% probability (100 * p), to have tried all potential 
-                controls (k) at least once. We multiply this approximate 
-                number with <n_controls>, and we take the minimum of this 
-                number and <limit_tries>. This approach ensures that we are 
+                controls (k) at least once. This approach ensures that we are 
                 reasonably sure that we have considered all potential 
-                controls for each individual match that is made, and that we 
-                can set a upper limit. Must be a positive integer.
-                Default is limit_tries = 10**6. 
+                controls for each individual match that is made. Alternatively,
+                a positive integer can be specified.
                 n_99pct formula is from 
                 https://math.stackexchange.com/questions/1155615/
                 probability-of-picking-each-of-m-elements-at-least-once-after-
@@ -109,12 +118,13 @@ del:            Delete intermediate datasets created by the macro:
   match_date    = ,
   match_exact   = _null_,
   match_inexact = %str(),
+  inexact_vars  = _auto_,
   n_controls    = 10,
   replace       = y,
   keep_add_vars = _null_,
   where         = %str(),
   by            = _null_,
-  limit_tries   = 10**6,
+  max_tries     = _auto_,
   seed          = 0,
   print_notes   = n,
   verbose       = n,
@@ -169,8 +179,8 @@ INPUT PARAMETER CHECKS
 /* Check that macro parameters are not empty. */
 %local parms i i_parm;
 %let parms = 
-  in_ds out_pf match_date match_exact n_controls replace
-  keep_add_vars by limit_tries seed del;   
+  in_ds out_pf match_date match_exact inexact_vars n_controls replace
+  keep_add_vars by max_tries seed del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
   %if &&&i_parm = %then %do;
@@ -196,11 +206,11 @@ INPUT PARAMETER CHECKS
 %let rc = %sysfunc(close(&ds_id));
 
 /* Check specified variable names are valid, exists in the input dataset, 
-that none of the specified variables have a "__" or "_ctrl_ prefix,
+that none of the specified variables have a "__" or "_ctrl_" prefix,
 and that each variable name has length of 25 or less. */
-
 %local vars i i_var j j_var ds_id rc;
 %let vars = match_date match_exact by keep_add_vars;
+%if &inexact_vars ne _auto_ %then %let vars = &vars inexact_vars;
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
   /* Regular expression: variable must start with a letter or underscore,
@@ -271,6 +281,15 @@ quit;
 
 %if &verbose = y %then %do;
   %put hash_match:   Variables identified:;
+  %put hash_match:   &match_inexact_vars;
+%end;
+
+/* If inexact_vars ne _auto_ we override the guessed variables with the 
+provided list */
+%if &inexact_vars ne _auto_ %then %let match_inexact_vars = &inexact_vars;
+
+%if %eval(&verbose = y and &inexact_vars ne _auto_) %then %do;
+  %put hash_match:   inexact_vars ne _auto_. Override with input:;
   %put hash_match:   &match_inexact_vars;
 %end;
 
@@ -347,13 +366,17 @@ one or more digits (so that 0 is not allowed, but eg 10 is). */
   %end;
 %end;
 
-/* limit_tries check: Check positive integer. limit_tries is likely to be a 
-large number which is easier to write on the form "10 ** x", so we evaluate 
-the expression given in limit_tries before checking that it is an integer.
-Regular expression: Starts with a number 1-9, followed by, and ends with,
+/* max_tries check: Check that the value is _auto_ or a positive integer. 
+If max_tries is given as a postive integer it is likely to be a large number 
+which is easier to write on the form "10 ** x", so we evaluate 
+the expression given in max_tries before checking that it is an integer.*/
+/* Regular expression: One of the following:
+1) _auto_
+2) Starts with a number 1-9, followed by, and ends with,
 one or more digits (so that 0 is not allowed, but eg 10 is). */
-%if %sysfunc(prxmatch('^[1-9]\d*$', %sysevalf(&limit_tries))) = 0 %then %do;
-  %put ERROR: "limit_tries" must be a positive integer!;
+%if &max_tries ne _auto_ %then %let max_tries = %sysevalf(&max_tries);
+%if %sysfunc(prxmatch('^_auto_$|^[1-9]\d*$', &max_tries)) = 0 %then %do;
+  %put ERROR: "max_tries" must be a positive integer or _auto_!;
   %goto end_of_macro; 
 %end;
 
@@ -363,17 +386,19 @@ one or more digits (so that 0 is not allowed, but eg 10 is). */
   %goto end_of_macro; 
 %end;
 
-/* Check that the replace and del macro parameters are specified 
-correctly. */
-%local parms i i_parm;
-%let parms = replace del;            
-%do i = 1 %to %sysfunc(countw(&parms, %str( )));
-  %let i_parm = %scan(&parms, &i, %str( ));
-  %if %eval(&&&i_parm in n y) = 0 %then %do;
-    %put ERROR: "&i_parm" does not have a valid value!;
-    %goto end_of_macro;
-  %end;
+/* Check that the replace parameter is specified correctly */
+%if %eval(&replace in n y m) = 0 %then %do;
+  %put ERROR: "replace" does not have a valid value!;
+  %goto end_of_macro;
 %end;
+
+
+/* Check that the the del parameter is specified correctly. */          
+%if %eval(&del in n y) = 0 %then %do;
+  %put ERROR: "del" does not have a valid value!;
+  %goto end_of_macro;
+%end;
+
 
 %if &verbose = y %then %do;
   %put hash_match: - Input value of keep_add_vars:; 
@@ -671,6 +696,32 @@ options nonotes;
     %end;
   run;
 
+  /* Find available memory in session. Taken from
+  https://sasnrd.com/sas-available-memory/
+  The xmrlmem option is undocumented, and I don't understand why
+  10e6 and not 1024**3 is the proper denominator... But it is clear from
+  testing that 1024**3 gives the wrong answer. */
+  %local avail_mem;
+  data _null_;
+    call symput("avail_mem", input(getoption('xmrlmem'),20.2)/10e6);
+  run;
+
+  /* Find size of dataset with potential controls */
+  %local pot_control_size;
+  proc sql noprint;
+    select filesize / 1024**3 into :pot_control_size
+      from sashelp.vtable
+      where libname = "WORK" and memname = "__HM_STRATA_CONTROLS";
+  quit;
+
+  /* If the dataset can't fit in memory, terminate the macro. */
+  %if %eval(&pot_control_size > &avail_mem) %then %do;
+    %put ERROR: Hash-table can%str(%')t fit in memory!;
+    %put ERROR: Hash-table size: %left(%qsysfunc(putn(&pot_control_size, 20.2))) GB;
+    %put ERROR: Available memory: %left(%qsysfunc(putn(&avail_mem, 20.2))) GB;
+    %goto end_of_macro;  
+  %end;
+
   /* Find number of cases and controls in strata. */
   proc sql noprint;
     select count(*) 
@@ -685,27 +736,40 @@ options nonotes;
   find controls for each case. */
   %if &n_strata_controls > 0 and &n_strata_cases > 0 %then %do;
 
-    /* Calculate the number of tries to find controls for
-    each case. See limit_tries documentation. */
-    %local max_tries;
-    data _null_;
-   	  k = &n_strata_controls;
-      p = 0.99;
-      max_tries = min(
-        &n_controls * round(k*(log(k) - log(-log(p)))), 
-        &limit_tries
-      );
-      call symput("max_tries", put(max_tries, best12.));
-    run;
+    /* If max_tries = _auto_, calculate the number of tries to find 
+    controls for each case in this strata. See max_tries documentation. */
+    %local max_tries_strata;
+    %if &max_tries = _auto_ %then %do;
+      data _null_;
+     	  k = &n_strata_controls;
+        p = 0.99;
+        max_tries_strata = &n_controls * round(k*(log(k) - log(-log(p))));
+        call symput("max_tries_strata", put(max_tries_strata, best12.));
+      run;
+    %end;
+    /* Else set the maximum number of tries to specifid number. */
+    %else %do;
+      %let max_tries_strata = &max_tries;
+    %end;
 
     %local j j_var;
-    data __hm_strata_matches(drop = __hash_key __stop __controls __tries __rand_obs __rc __highest_tries)
-         __hm_strata_incomp_info(keep = __merge_id __match_date __strata __controls &match_inexact_vars);
+    data  __hm_strata_matches(
+            drop = __hash_key __stop __controls __tries __rand_obs __rc 
+                   __highest_tries 
+                   %if &replace = m %then %do; __list_controls %end;           
+          )
+          __hm_strata_incomp_info(
+            keep = __merge_id __match_date __strata __controls 
+                   &match_inexact_vars
+          );
     	call streaminit(&seed);
     	length	__hash_key _ctrl___merge_id 8 
         %do j = 1 %to %sysfunc(countw(&match_inexact_vars, %str( )));
           %let j_var = %scan(&match_inexact_vars, &j, %str( ));
           _ctrl_&j_var &&&j_var._length
+        %end;
+        %if &replace = m %then %do;
+          __list_controls $%eval(&n_controls * 20)
         %end;
         ;
     	format	__hash_key _ctrl___merge_id best12. 
@@ -751,6 +815,7 @@ options nonotes;
     	__controls = 0;
     	__tries = 0;
       __match_id + 1;
+      %if &replace = m %then %do; __list_controls = ""; %end;  
 
     	do while (__stop = 0);
     		__tries + 1;
@@ -762,22 +827,30 @@ options nonotes;
       		__rc = h.find(key:__rand_obs);
     		/* Check if key exists and if valid control. */
         if __rc = 0 
+          %if &replace = m %then %do;
+            and findw(__list_controls, put(__rand_obs, best12.), " ", "er") = 0
+          %end;
           %if %bquote(&match_inexact) ne %then %do;
             and &match_inexact
           %end;
     		then do;
     			__controls + 1; 	
-          /* If matching without replacemnt, remove matched control
+          /* If matching without replacement, remove matched control
           from hash-table. */
           %if &replace = n %then %do;
             __rc = h.remove(key: __rand_obs);
+          %end;
+          /* If matching with mixed replacement, add id to list of
+          ids already used as controls */
+          %if &replace = m %then %do;
+            __list_controls = catx(" ", __list_controls, put(__rand_obs, best12.));
           %end;
           /* Output matched control. */
           output __hm_strata_matches;
     		end;
     		/* When we have found n_control valid controls or we reach the
         maximum number of tries we stop the loop. */ 
-    		if __controls >= &n_controls or __tries >= &max_tries then __stop = 1;
+    		if __controls >= &n_controls or __tries >= &max_tries_strata then __stop = 1;
    
         /* If we have not found the wanted number of controls for a case
         we output info on the case to a dataset. */
@@ -794,9 +867,13 @@ options nonotes;
     the macro is terminated. */
     %if &syserr ne 0 %then %do;
       %put ERROR- Matching resulted in a warning or error!;
-      %put ERROR- Check if specified "match_inexact" condition:;
+      %put ERROR- Check the log for warnings/errors indicating that;
+      %put ERROR- 1) The specified "match_inexact" condition:;
       %put ERROR- match_inexact = &match_inexact;
-      %put ERROR- is valid.;
+      %put ERROR- is incorrect and needs to be corrected.;
+      %put ERROR- 2) The hash-table could not fit in the memory.;
+      %put ERROR- This can only be fixed by running the macro on a;
+      %put ERROR- system with more available memory. ;
       %goto end_of_macro; 
     %end;
   %end;
@@ -890,7 +967,7 @@ options nonotes;
     __start = compress(put(&time_start, datetime32.));
     __stop = compress(put(&time_stop, datetime32.));
     __run_time = compress(put(&duration, time13.));
-    __max_tries = &max_tries;
+    __max_tries = &max_tries_strata;
     __highest_tries = &highest_tries;
     output;
   run;
@@ -1198,7 +1275,7 @@ data &out_pf._match_info;
     __n_cases = "Number of cases"
     __n_potential_controls = "Number of potential controls"
     __run_time = "Run-time (tt:mm:ss)"
-    __max_tries = "Maximum attempts that will be attempted to find all matches for a case"
+    __max_tries = "Maximum tries that will be attempted to find all matches for a case"
     __highest_tries = "Actual largest needed attempts needed to find all matches for a case"
     __n_some_matches = "Number of cases where only a some, not all, controls could be found"
     __n_no_matches = "Number of cases for which no controls could be found"

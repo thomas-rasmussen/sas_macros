@@ -35,7 +35,7 @@ run;
 %local opt_vars i i_var;
 %let opt_vars = 
   match_exact n_controls replace keep_add_vars by            
-  limit_tries seed print_notes verbose del;          
+  max_tries seed print_notes verbose del;          
 
 %do i = 1 %to %sysfunc(countw(&opt_vars, %str( )));
   %let i_var = %scan(&opt_vars, &i, %str( ));
@@ -156,6 +156,45 @@ run;
   out_pf        = __out1, 
   match_date    = index_num,
   match_inexact = %str(var_num1 net invalid)
+);
+
+/*** inexact_vars test ***/
+
+/* Check inexact_vars works as intended. */
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(var_num1 ne invalid),
+  inexact_vars  = var_num1
+);
+
+/* Check that the macro can handle superfluous variables
+and just adds them to the output */
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(var_num1 ne invalid),
+  inexact_vars  = var_num1 var_char1
+);
+
+/* Check that specifying variables not in the input dataset 
+triggers and error. */
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(var_num1 ne invalid),
+  inexact_vars  = var_num
+);
+
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(var_num1 ne invalid),
+  inexact_vars  = var_num var_num1
 );
 
 
@@ -332,41 +371,41 @@ produces an error. */
   by          = var_num1 var_num1
 );
 
-/*** limit_tries tests ***/
+/*** max_tries tests ***/
 
 %hash_match(
   in_ds       = __data1, 
   out_pf      = __out1, 
   match_date  = index_num,
-  limit_tries = 0
+  max_tries = 0
 );
 
 %hash_match(
   in_ds       = __data1, 
   out_pf      = __out1, 
   match_date  = index_num,
-  limit_tries = -1
+  max_tries = -1
 );
 
 %hash_match(
   in_ds       = __data1, 
   out_pf      = __out1, 
   match_date  = index_num,
-  limit_tries = 2.5
+  max_tries = 2.5
 );
 
 %hash_match(
   in_ds       = __data1, 
   out_pf      = __out1, 
   match_date  = index_num,
-  limit_tries = 1000
+  max_tries = 1000
 );
 
 %hash_match(
   in_ds       = __data1, 
   out_pf      = __out1, 
   match_date  = index_num,
-  limit_tries = 5
+  max_tries = 5
 );
 
 
@@ -534,3 +573,24 @@ run;
   match_inexact = %str(var1 ne 1 and var2 ne _ctrl_var2)
 );
 
+
+/* Test that replace = m works as intended */
+
+data __data1;
+  id = 1; index_date = 1; output;
+  id = 2; index_date = 1; output;
+  id = 3; index_date = .; output;
+  id = 4; index_date = .; output;
+run;
+    
+option notes;
+%hash_match(
+  in_ds = __data1,
+  out_pf = __out1,
+  match_date = index_date,
+  match_inexact = %str(id ne _ctrl_id),
+  seed = 1,
+  replace = m
+);
+
+/*
