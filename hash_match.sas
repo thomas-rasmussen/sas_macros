@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.3.2
+VERSION:    0.3.3
 ********************************************************************************
 DESCRIPTION:
 Matching using a hash-table merge approach. The input dataset is expected to be 
@@ -956,7 +956,7 @@ options nonotes;
   %local highest_tries;
   %if &n_strata_cases  = 0 or &n_strata_controls = 0 %then %do;
     %let highest_tries = .;
-    %let max_tries = .;
+    %let max_tries_strata = .;
   %end;
   data __hm_strata_info;
     format __strata __n_cases __n_potential_controls best12. 

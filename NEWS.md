@@ -14,6 +14,10 @@ First version of calculate_sd macro that calculates standardized differences (SD
 
 Matching using a hash-table merge approach
 
+**Version 0.3.3**
+
+- Hotfix of edge-case bug introduced in version 0.3.2
+
 **Version 0.3.2**
 
 - Matching with "mixed" replacement can now be done using replace = m, see documentation.
