@@ -1,412 +1,679 @@
-/*******************************************************************************
-*	AUTHOR:       Thomas Bøjer Rasmussen (TBR)
-* VERSION:      1.0
-* DATE:         2019-03-07
-********************************************************************************
-*	DESCRIPTION:
-* Tests of the ps_match macro. 
-*******************************************************************************/
+/******************************************************************************
+Basic tests
+******************************************************************************/
 
-/*******************************************************************************
- BASIC TESTS OF MACRO PARAMETER SPECIFICATIONS 
-*******************************************************************************/
-/* Test that macro correctly handles input dataset variables and saves them in
-the output dataset*/
-data pop;
-  pnr = "pt1"; exposure = 1; prop_score = 0.5; cov="1"; output;
-  pnr = "pt2"; exposure = 0; prop_score = 0.5; cov="2"; output;
-run; 
-
-%ps_match(
-  in_ds = pop 
-  ,out_ds = pop_matched
-	,id = pnr
-	,E = exposure
-	,ps = prop_score
-  ,caliper = 0.1
-  ,save_info = Y
-  ,del = N
-);
-
-/* Test input parameter checks are working as intended */
-data pop;
-  ID = 1; T = 1; PS = 0.5; output;
-run; 
-
-%ps_match(
-  in_ds = pop_123
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-);
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = pnr
-	,E = T
-	,ps = PS
-);
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = E
-	,ps = PS
-);
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = Prop_score
-);
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-  ,replace = yes
-);
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-  ,order = yes
-);
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-  ,caliper = 0..32
-);
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-  ,caliper = default
-);
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-  ,caliper =
-);
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-  ,save_info = fds
-);
-
-data pop;
-  ID = 1; T = "1"; PS = 0.5; output;
-run; 
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-);
-
-data pop;
-  ID = 1; T = 1; PS = "0.1"; output;
-run; 
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-);
-
-data pop;
-  ID = 1; T = 2; PS = 0.1; output;
-run; 
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-);
-
-
-data pop;
-  ID = 1; T = 1; PS = 0; output;
-run; 
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-);
-
-data pop;
-  ID = 1; T = 1; PS = .; output;
-run; 
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-);
-
-data pop;
-  ID = 1; T = 1; PS = 0.5; output;
-  ID = 1; T = 1; PS = 0.5; output;
-run; 
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-);
-
-
-data pop;
-  ID = 1; by=1; T = 1; PS = 0.5; output;
-  ID = 1; by=2; T = 1; PS = 0.5; output;
-  ID = 1; by=2; T = 1; PS = 0.5; output;
-run; 
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-  ,by = by
-	,id = ID
-	,E = T
-	,ps = PS
-);
-
-
-/*******************************************************************************
-MORE TESTS
-*******************************************************************************/
-
-/* Empty input dataset */
-data pop;
-  ID = 1; T = 1; PS = 0.5; output;
-run;
-
-data pop;
-  set pop(obs=0);
-run; 
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = T
-	,ps = PS
-);
-/* Gives the somewhat cryptic error message that the E variable is not numeric.
-This happens since the macro variable E_type will not be defined when the input 
-dataset is empty, which in turn make E fail the numeric value test. This should at 
-the very least promt the user to check the input dataset and realize it's empty, 
-so we will not try to handle this specific scenario in a better way. */
-
-
-/* Check the order macro parameter actually matches the exposed patients in
-the order they are appear in the data when order = ASIS */
-data pop;
-  by=1; ID = 1; T = 1; PS = 0.5; output;
-  by=1; ID = 2; T = 1; PS = 0.5; output;
-  by=1; ID = 3; T = 1; PS = 0.5; output;
-  by=1; ID = 4; T = 1; PS = 0.5; output;
-  by=1; ID = 5; T = 0; PS = 0.5; output;
-  by=2; ID = 1; T = 0; PS = 0.4; output;
-  by=2; ID = 2; T = 0; PS = 0.3; output;
-  by=2; ID = 3; T = 1; PS = 0.5; output;
-  by=2; ID = 4; T = 1; PS = 0.5; output;
-  by=2; ID = 5; T = 1; PS = 0.5; output;
-  by=2; ID = 6; T = 1; PS = 0.5; output;
-run;
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-  ,by = by
-	,id = ID
-	,E = T
-	,ps = PS
-  ,order= ASIS
-  ,caliper = 1
-  ,del = N
-  ,save_info = Y
-  ,seed = 123
-);
-
-
-/* Check the order macro parameter actually matches the exposed patients in
-the order they are appear in the data when order = ASIS but the input data
-is not not sorting according to the by variables */
-data pop;
-  by=2; ID = 5; T = 1; PS = 0.5; output;
-  by=2; ID = 6; T = 1; PS = 0.5; output;
-  by=1; ID = 1; T = 1; PS = 0.5; output;
-  by=1; ID = 2; T = 1; PS = 0.5; output;
-  by=1; ID = 3; T = 1; PS = 0.5; output;
-  by=1; ID = 4; T = 1; PS = 0.5; output;
-  by=1; ID = 5; T = 0; PS = 0.5; output;
-  by=2; ID = 1; T = 0; PS = 0.4; output;
-  by=2; ID = 2; T = 0; PS = 0.3; output;
-  by=2; ID = 3; T = 1; PS = 0.5; output;
-  by=2; ID = 4; T = 1; PS = 0.5; output;
-
-run;
-
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-  ,by = by
-	,id = ID
-	,E = T
-	,ps = PS
-  ,order= ASIS
-  ,caliper = 1
-  ,del = N
-  ,save_info = Y
-  ,seed = 123
-);
-
-/* Check the progress output in the log and the output info dataset
-when using by-variables, and that the macro works appropriately when the 
-caliper is automatically calculated, but the input dataset has no exposed 
-or unexposed patients in one/more/all by-variable stratas */
-data pop;
-  call streaminit(123);
-  do i = 1 to 10;
-    do j = 1 to 100;
-      by = i;
-      ID = j; 
-      E = rand("bernoulli", 0.5**i); 
-      ps = rand("uniform");
-      output;
-    end;
-  end;
-  drop i j;
-run;
-
-options nonotes;
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-  ,by = by
-	,id = ID
-	,E = E
-	,ps = ps
-  ,save_info = Y
-);
-option notes;
-
-/* Check that if there are only a few discrete ps-values and we do matching
-with replacemetn, that a random of the closest unexposed is used and not the same 
-for each exposed patient */
-data pop;
-  call streaminit(123);
-  do i = 1 to 10000;
-    ID = i;
-    E = rand("bernoulli", 0.2); 
-    ps = 1 / ( 1.1 + rand("binomial", 0.5, 3));
+data dat;
+  call streaminit(1);
+  do i  = 1 to 10**3;
+    id = i;
+    by_char = "val_" || put(rand("bernoulli", 0.5), 1.);
+    by_num = rand("bernoulli", 0.5);
+    ps = rand("uniform");
+    group = rand("bernoulli", 0.2);
+    group3 = rand("binomial", 0.5, 2);
+    maximum_length_variable_name1234 = rand("bernoulli", 0.5);
     output;
   end;
-  drop i ;
+  drop i;
 run;
 
-options nonotes;
+/* Check that he macro gives an error if any of the macro
+parameters (except <where>) are missing. */
+%ps_match();
+%ps_match(in_ds = );
+%ps_match(in_ds = dat, out_pf = );
+%ps_match(in_ds = dat, out_pf = out, group_var = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var =);
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, match_on = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, caliper = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, replace = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, match_order = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, by = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, print_notes = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, verbose = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, seed = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, del = );
+
+/* Check that variables with maximum variable name length work. */
+%ps_match(in_ds = dat, out_pf = out, group_var = maximum_length_variable_name1234, ps_var = ps);
+
+
+/*** in_ds tests ***/
+
+/* Check error if input dataset does not exist */
+%ps_match(in_ds = abc, out_pf = out, group_var = group, ps_var = ps);
+
+/* Check error if input dataset is empty */
+data dat_empty;
+  set dat(obs = 0);
+run;
+%ps_match(in_ds = dat_empty, out_pf = out, group_var = group, ps_var = ps);
+
+
+/*** out_pf tests ***/
+
+/* Check error if out_pf length exceeds what is allowed. */
+%ps_match(in_ds = dat, out_pf = ds_that_has_length_22_, group_var = group, ps_var = ps);
+
+/* Check max out_pf length works as intended */
+%ps_match(in_ds = dat, out_pf = ds_that_has_length_21, group_var = group, ps_var = ps);
+
+
+/*** group_var tests ***/
+
+/* Check multiply variables triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = group group, ps_var = ps);
+
+/* Check non-existent variable triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = abc, ps_var = ps);
+
+/* Check invalid SAS name triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = 123, ps_var = ps);
+
+/* Check more than two values triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = group3, ps_var = ps);
+
+/* Check character variable triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = by_char, ps_var = ps);
+
+/* Check non 0/1 values triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = ps, ps_var = ps);
+
+
+/*** ps_var tests ***/
+
+/* Check multiply variables triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps ps);
+
+/* Check non-existent variable triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = abc);
+
+/* Check invalid SAS name triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = 123);
+
+/* Check character variable triggers error. */
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = by_char);
+
+/* Check variables with values outside the interval (0;1) triggers error */
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = group);
+
+
+/*** match_on tests ***/
+
+/* Check invalid value triggers error. */
 %ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = E
-	,ps = ps
-  ,replace = Y
-  ,save_info = Y
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  match_on = invalid
 );
+
+/* Check valid values work. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  match_on = ps
+);
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  match_on = logit_ps
+);
+
+
+/*** caliper test ***/
+
+/* Check invalid value triggers error. */
+%ps_match(in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  caliper = abc
+);
+
+/* Check negative value triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  caliper = -1.0
+);
+
+/* Check zero not allowed. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  caliper = 0
+);
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  caliper = 0.0
+);
+
+/* Check manual specified caliper work  */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  caliper = 0.1,
+  verbose = y
+);
+
+
+/*** replace tests ***/
+
+/* Check invalid value triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  replace = abc
+);
+
+/* Check valid values work. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  replace = n
+);
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  replace = y
+);
+
+
+/*** match_order ***/
+
+/* Check invalid value triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  match_order = abc
+);
+
+/* Check valid values work. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  match_order = rand
+);
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  match_order = asis
+);
+
+/*** where tests ***/
+
+/* Check that where conditions work as intended */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  where = %str(by_num = 0)
+);
+
+/* Check that misspecified where conditions triggers error */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  where = %str(invalid = nonsense)
+);
+
+
+/*** by checks ***/
+
+/* Check non-existent variable triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  by = abc
+);
+
+/* Check invalid SAS name triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  by = 123
+);
+
+/* Check duplicate variables triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  by = by_num by_num
+);
+
+/* Check both numeric and character variables work. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  by = by_num by_char
+);
+
+
+/*** print_notes tests ***/
+
+/* Check invalid value triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  print_notes = abc
+);
+
+/* Check valid values works as intended when notes are on
+before running macro. */
+option notes;
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  print_notes = y
+);
+
+option notes;
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  print_notes = n
+);
+
+/* Check valid values works as intended when notes are off
+before running macro. */
+option nonotes;
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  print_notes = y
+);
+
+option nonotes;
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  print_notes = n
+);
+
 option notes;
 
-proc sort data = pop_matched out = dup_match nodupkeys;
-  by ID;
-run;
 
-/* 333 duplicates removed. Seems reasonable considering there were 7992
-unexposed patients with only 4 different ps values. */
+/*** verbose tests ***/
 
-  
-/* Check that the macro correctly handles multiple by-variables */
-data pop;
-  call streaminit(123);
-  do i = 1 to 10;
-    do j = 1 to 10;
-      do k = 1 to 100;
-        by1 = i;
-        by2 = j;
-        ID = k; 
-        E = rand("bernoulli", 0.5); 
-        ps = rand("uniform");
-        output;
-      end;
-    end;
+/* Check invalid value triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  verbose = abc
+);
+
+/* Check valid values work. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  verbose = y
+);
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  verbose = n
+);
+
+
+/*** seed tests ***/
+
+/* Check invalid values triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  seed = -1.3
+);
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  seed = -1
+);
+
+/* Check valid values work as intended. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  seed = 1
+);
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  seed = 2
+);
+
+
+/*** del tests ***/
+
+/* Check invalid value triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  del = abc
+);
+
+/* Check valid values work. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  del = n
+);
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  del = y
+);
+
+
+/******************************************************************************
+Specific tests
+******************************************************************************/
+
+/*** Check that random matches are made in cases where multiple ps's are equally
+close. ***/
+data dat;
+  do i = 1 to 1000;
+    id = 1; group = 1; ps = 0.5; output;
+    id = 2; group = 0; ps = 0.5; output;
+    id = 3; group = 0; ps = 0.5; output;
   end;
-  drop i j k;
-run;
-
-
-options nonotes;
-%ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-  ,by = by1 by2
-	,id = ID
-	,E = E
-	,ps = ps
-  ,save_info = Y
-  ,del = n
-);
-option notes;
-
-
-/* Check that if an empty input dataset if given, that a warning is issued
-and an empty output dataset with the added _match variable is correctly created. */
-data pop(where=(ID NE .));
-  format ID E ps best12.;
+  do i = 1 to 1000;
+    id = 4; group = 1; ps = 0.4; output;
+    id = 5; group = 0; ps = 0.31; output;
+    id = 6; group = 0; ps = 0.49; output;
+  end;
+  drop i;
 run;
 
 %ps_match(
-  in_ds = pop
-	,out_ds = pop_matched
-	,id = ID
-	,E = E
-	,ps = ps
+  in_ds = dat,
+  out_pf = out,
+  group_var = group,
+  ps_var = ps,
+  match_order = asis,
+  match_on = ps,
+  caliper = 0.1,
+  seed = 1
 );
+
+proc means data = out_matches nway noprint;
+  class id;
+  output out = equal_ps_test n(id) = test;
+run;
+
+
+/*** Check that macro makes an empty output dataset when there is no cases
+or no controls. ***/
+data dat;
+  id = 1; group = 0; ps = 0.5; output;
+  id = 2; group = 0; ps = 0.5; output;
+run;
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps);
+
+data dat;
+  id = 1; group = 1; ps = 0.5; output;
+  id = 2; group = 1; ps = 0.5; output;
+run;
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps);
+
+
+/*** Manual check that matching with and without replacement works as
+intended. ***/
+data dat;
+  id = 1; group = 1; ps = 0.5; output;
+  id = 2; group = 1; ps = 0.5; output;
+  id = 3; group = 0; ps = 0.5; output;
+run;
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps, 
+  match_on = ps,
+  caliper = 0.1,
+  replace = y
+);
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps, 
+  match_on = ps,
+  caliper = 0.1,
+  replace = n
+);
+
+
+/*** Missing data tests  ***/
+data dat;
+  format by_char_miss $10.;
+  call streaminit(1);
+  do i  = 1 to 10**3;
+    id = i;
+    by_char = "val_" || put(rand("bernoulli", 0.5), 1.);
+    by_num = rand("bernoulli", 0.5);
+    if rand("uniform") < 0.5 then by_char_miss = "";
+    else by_char_miss = by_char;
+    if rand("uniform") < 0.5 then by_num_miss = .;
+    else by_num_miss = by_num;
+    ps = rand("uniform");
+    if rand("uniform") < 0.5 then ps_miss = .;
+    else ps_miss = ps;
+    group = rand("bernoulli", 0.2);
+    if rand("uniform") < 0.5 then group_miss = .;
+    else group_miss = group;
+    output;
+  end;
+  drop i;
+run;
+
+/* Check missing values in group_var triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group_miss, 
+  ps_var = ps
+);
+
+/* Check missing values in ps_var triggers error. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps_miss
+);
+
+/* Check that missing /empty values in by variables works as intended. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  by = by_num_miss by_char_miss
+);
+
+
+/*** Additional caliper tests ***/
+
+data dat;
+  call streaminit(1);
+  do i  = 1 to 10**3;
+    id = i;
+    group = rand("bernoulli", 0.5);
+    by = rand("binomial", 0.3, 4);
+    ps = rand("uniform") / (1 + by);
+    output;
+  end;
+  drop i;
+run;
+
+/* Check caliper changes in each strata when it is automatically calculated. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  by = by,
+  verbose = y
+);
+
+/* Check caliper is the same in each strata if manually specified. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  by = by,
+  caliper = 0.1,
+  verbose = y
+);
+
+/* Check that no matches are made if caliper cannot be calculated. */
+data dat;
+  id = 1; group = 1; ps = 0.5; output;
+  id = 2; group = 0; ps = 0.5; output;
+run;
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  verbose = y
+);
+
+
+/******************************************************************************
+Protected variable name tests
+******************************************************************************/
+
+/* Check that the input data is not allowed to contain any variables with a
+"__" prefix. */
+data dat;
+  call streaminit(1);
+  do i = 1 to 1000;
+    group = rand("bernoulli", 0.2);
+    ps = rand("uniform");
+    __test = 1;
+    output;
+  end;
+run;
+
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps);
+
+
+/******************************************************************************
+Non-matched output dataset
+******************************************************************************/
+data dat;
+  call streaminit(1);
+  id = 1; group = 1; ps = 0.5; output;
+  id = 2; group = 0; ps = 0.5; output;
+  id = 3; group = 1; ps = 0.8; output;
+run;
+
+/* Manual check to see if output looks correct. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps,
+  match_on = ps, 
+  caliper = 0.1,
+  verbose = y
+);
+
+
+/******************************************************************************
+Performance
+******************************************************************************/
+
+data dat;
+  call streaminit(1);
+  do i  = 1 to 10**5;
+    id = i;
+    group = rand("bernoulli", 0.5);
+    ps = rand("uniform");
+    output;
+  end;
+  drop i;
+run;
+
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  group_var = group, 
+  ps_var = ps
+);
+
+/* Approximately 4min for a relatively large population with 100,000 
+observation, where approximately 50,000 matches has to be tested
+for each treated patient. Not bad, but doesn't feel great either.
+Probably not faster to do a Cartesian join and do the matching in
+a data-step? Would also generate a very large intermediate dataset. */

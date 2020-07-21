@@ -99,6 +99,11 @@ macro. See examples.
 
 Efficient propensity score pair matching using a hash-table merge.
 
+**Version 1.1.0**
+
+Macro overhaul. Numerous changes are not backwards-compatible. See macro documentation
+for more information.
+
 **Version 1.0.0**
 
 First version. Based on macros used in previous projects.

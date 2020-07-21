@@ -1,609 +1,902 @@
+/*
+todo:
+
+2) chekc local statements
+3) rerun all tests
+4) rerun example
+*/
+
 /*******************************************************************************
-*	AUTHOR:       Thomas Bøjer Rasmussen (TBR)
-* VERSION:      1.0
-* DATE:         2019-03-07
-*
-* Accompanying examples and tests, version notes etc. can be found at:
-* https://github.com/thomas-rasmussen/sas_macros
+AUTHOR:     Thomas Bøjer Rasmussen
+VERSION:    0.1.1
 ********************************************************************************
-*	DESCRIPTION:
-*	The macro performs efficient propensity score (PS) pair matching using 
-* hash tables. Matching is done on the logit of the PS and by default the macro
-* automatically uses a caliper correpsonding to 0.2 times the standard deviation 
-*	of the logit of the PS as this has been shown to perform well in various 
-* scenarios, see
-*	Austin 2001 - Optimal caliper widths for propensity-score matching when 
-*   estimating differences in means and differences in proportions in 
-*	  observational studies
-*
-* PARAMETERS:
-*	in_ds:      Input dataset with one dataline for each patient.
-*	out_ds:     Name of output dataset with the matched population. All variables
-*             in the input dataset are included with addition of the  
-*             variable _match.
-* by:         If the matching is to be done in subsets of the input dataset
-*             specify the by-variables. Separate by-variables with " ", or the
-*             macro will fail or produce unintended results. 
-*	id:         Specify patient ID variable. ID values must be unique in each strata
-*             defined by the specified by-variables.
-*	ps:         Name of PS variable.
-*	E:          Name of the exposure variable. Must be numeric and take the
-*             values 1 (exposed) or 0 (unexposed).
-*	caliper:	  Caliper to be used. Default value is AUTO (see description).
-*             Note that if a caliper is specified manualy , it is used to match 
-*             on logit(ps) NOT on the ps's themselves!
-*	replace:	  Specify if matching is to be done with (Y) or without (N) 
-*					    replacement.
-* order:      Specify if matching is done in random order (RAND) or in the order
-*             the exposed patients appear in the data (ASIS). 
-*	save_info:  Specify if an additional output dataset is to be made with 
-*             information on the number of patients before and after matching, 
-*             used caliper, and matching run-times. Y=yes (default) N=no.
-*             The name of the dataset is [out_ds]_info.
-*	seed:			  Specify seed for random number generation. Default is 0.
-*	del:			 Specify if the temporary datasets used in the macro is to be
-*             deleted at the end of the macro. Y(Yes)/N(No). Default is Y.
-*
-* EXAMPLE OF USE:
-*
-* data pop;
-*   call streaminit(123);
-*   do i = 1 to 1000;
-*     id = i;
-*     E = rand("bernoulli", 0.2);
-*     ps = E*rand("beta", 2, 3) + (1-E) * rand("beta", 2, 6);
-*     output;
-*   end;
-*   drop i;
-* run;
-* 
-* %ps_match(
-*   in_ds = pop
-* 	,out_ds = pop_matched
-* 	,id = id
-* 	,E = E
-* 	,ps = ps
-*   ,seed = 123
-*   );
-*
-* For more advanced examples see the the accompaning ps_match_examples.sas file!
-*******************************************************************************/
+DESCRIPTION:
+Propensity score (ps) pair matching using nearest neighbor matching 
+with a caliper.
 
+Accompanying examples and tests, version notes etc. can be found at:
+https://github.com/thomas-rasmussen/sas_macros
+
+DETAILS:
+By default the matching is done on the logit of the ps using a caliper 
+corresponding to 0.2 times the standard deviation of the logit of the ps, as
+this has been shown to perform well in various scenarios. For more info, see
+
+Austin, P. C. (2011). Optimal caliper widths for propensity-score matching when 
+estimating differences in means and differences in proportions in observational 
+studies.
+********************************************************************************
+PARAMETERS:
+*** REQUIRED ***
+in_ds:        (libname.)member-name of input dataset with treated/exposed and 
+              untreated/unexposed patients.
+out_pf:       (libname.)member-name prefix of output datasets. The following
+              datasets are created by the macro:
+              - <out_pf>_matches: matched population. 
+              - <out_pf>_no_matches: information on patients for which 
+              no match could be found.
+              - <out_pf>_info: miscellaneous information and diagnostics of 
+              the matching procedure.
+group_var:    Grouping variable. Must be anumeric variable taking 0/1 values.
+              Matching is done for each observation with <group_var> = 1, usually
+              the treated/exposed patients.
+ps_var:       Name of ps variable. Must be a numeric variable where
+              0 < ps_var < 1 for all patients.
+*** OPTIONAL ***
+match_on:     Should matching be done on the ps or logit(ps)?
+              - ps: match_on = ps
+              - logit(ps): match_on = logit_ps (default)
+caliper:      Caliper width used in matching. By default (caliper = auto), the 
+              caliper is chosen as described in the details above. Otherwise,
+              a postive number can be specified to be used as a caliper (fixed
+              across by-variables).
+replace:      Match with or without replacement?
+              - With replacement: replace = y (default)
+              - Without replacement: replace = n.
+match_order:  In what order is matching to be done?
+              Random order: order = rand (default)
+              Data order: order = asis       
+where:        Condition(s) used to to restrict the input dataset in a where-
+              statement. Use the %str function as a wrapper, eg 
+              where = %str(var = "value").
+by:           Space-separated list of by-variables. Default is by = _null_,
+              ie no by-variables.    
+print_notes:  Print notes in log?
+              - Yes: print_notes = y
+              - No:  print_notes = n (default)
+verbose:      Print info on what is happening during macro execution
+              to the log?
+              - Yes: verbose = y
+              - No:  verbose = n (default)
+seed:         Seed used for random number generation. Default is seed = 0,
+              ie a random seed is used.        
+del:          Delete intermediate datasets created by the macro:
+              - Yes: del = y (default)
+              - no:  del = n            
+******************************************************************************/
 %macro ps_match(
-  in_ds =
-	,out_ds =
-	,by = 
-	,id =
-	,E =
-	,ps =
-	,caliper = AUTO
-	,replace = N
-  ,order = RAND
-	,save_info = N
-  ,seed = 0
-	,del = Y
-) / minoperator;
+  in_ds       = ,
+  out_pf      = ,
+  group_var   = ,
+  ps_var      = ,
+  match_on    = logit_ps,
+  caliper     = auto,
+  replace     = y,
+  match_order = rand,
+  where       = %str(),
+  by          = _null_,
+  print_notes = n,
+  verbose     = n,
+  seed        = 0,
+  del         = y
+) / minoperator mindelimiter = ' ';
 
-/*******************************************************************************	
-INPUT CHECKS 
+%put ps_match: start execution;
+
+/* Find value of notes option, save it, then disable notes */
+%local opt_notes;
+%let opt_notes = %sysfunc(getoption(notes));
+options nonotes;
+
+/* Make sure there are no intermediate dataset from from a previous 
+run of the macro in the work directory before execution. */
+proc datasets nolist nodetails;
+  delete __ps_:;
+run;
+quit;
+
+
+/*******************************************************************************  
+INPUT PARAMETER CHECKS 
 *******************************************************************************/
-/* Check that the specified input dataset exists */
-%if %sysfunc(exist(&in_ds)) = 0 %then %do;
-  %put ERROR: Input dataset &in_ds does not exist!;
-  %goto end_of_macro;
+
+/* verbose: check parameter not empty. */
+%if &verbose = %then %do;
+  %put ERROR: Macro parameter <verbose> not specified!;
+  %goto end_of_macro;  
 %end;
 
-/* Check that the input dataset is not empty and if the specified BY, ID, E and 
-PS variables exists in the input dataset */
-%local rc ds_id i i_by;
-%let ds_id = %sysfunc(open(&in_ds));
-
-%if  %sysfunc(attrn(&ds_id, nobs)) = 0 %then %do;
-  %let rc = %sysfunc(close(&ds_id));
-  %put WARNING: Input dataset &in_ds is empty!;
-  data &out_ds;
-    format _match best12.;
-    set &in_ds;
-  run;
-  %goto end_of_macro;
+/* verbose: check parameter has valid value. */
+%if (&verbose in y n) = 0 %then %do;
+  %put ERROR: <verbose> does not have a valid value!;
+  %goto end_of_macro;  
 %end;
 
-%if &by. NE %then %do;
-  %do i = 1 %to %sysfunc(countw(&by, %str( )));
-    %let i_by = %scan(&by, &i, %str( ));
-    %if %sysfunc(varnum(&ds_id, &i_by)) = 0 %then %do;
-      %let rc = %sysfunc(close(&ds_id));
-      %put ERROR: Variable &i_by does not exist in input dataset &in_ds!;
-      %goto end_of_macro; 
-    %end;
+%if &verbose = y %then %do;
+  %put ps_match: *** Input checks ***;
+%end;
+
+/* print_notes: check parameter not empty. */
+%if &print_notes = %then %do;
+  %put ERROR: Macro parameter <print_notes> not specified!;
+  %goto end_of_macro;  
+%end;
+
+/*print_notes: check parameter has valid value. */
+%if (&print_notes in y n) = 0 %then %do;
+  %put ERROR: <print_notes> does not have a valid value!;
+  %goto end_of_macro;  
+%end;
+
+%if &print_notes = y %then %do;
+  options notes;
+%end;   
+    
+/* Check remaining macro parameters (except where) not empty. */
+%local parms i i_parm;
+%let parms =  in_ds out_pf group_var ps_var match_on caliper replace 
+              match_order by seed del;   
+%do i = 1 %to %sysfunc(countw(&parms, %str( )));
+  %let i_parm = %scan(&parms, &i, %str( ));
+  %if %bquote(&&&i_parm) = %then %do;
+    %put ERROR: Macro parameter <&i_parm> not specified!;
+    %goto end_of_macro;    
   %end;
 %end;
 
-%if %sysfunc(varnum(&ds_id, &id)) = 0 %then %do; 
-  %let rc = %sysfunc(close(&ds_id));
-  %put ERROR: Variable &id does not exist in input dataset &in_ds!;
-  %goto end_of_macro; 
+/* in_ds: check input dataset exists. */
+%if %sysfunc(exist(&in_ds)) = 0 %then %do;
+  %put ERROR: Specified <in_ds> dataset "&in_ds" does not exist!;
+  %goto end_of_macro;
 %end;
 
-%if %sysfunc(varnum(&ds_id, &E)) = 0 %then %do; 
+/* in_ds: check input dataset not empty. */
+%local ds_id rc;
+%let ds_id = %sysfunc(open(&in_ds));
+%if  %sysfunc(attrn(&ds_id, nobs)) = 0 %then %do;
   %let rc = %sysfunc(close(&ds_id));
-  %put ERROR: Variable &E does not exist in input dataset &in_ds!;
-  %goto end_of_macro; 
+  %put ERROR: Specified <in_ds> dataset "&in_ds" is empty!;
+  %goto end_of_macro;
 %end;
-
-%if %sysfunc(varnum(&ds_id, &ps)) = 0 %then %do; 
-  %let rc = %sysfunc(close(&ds_id));
-  %put ERROR: Variable &ps does not exist in input dataset &in_ds!;
-  %goto end_of_macro; 
-%end;
-
 %let rc = %sysfunc(close(&ds_id));
 
-/* Check that the replace macro parameter has a valid value */
-%if (&replace in N Y) = 0 %then %do;
-  %put ERROR: Macro parameter "replace" has to be specified as Y or N!;
-  %goto end_of_macro; 
-%end;
-
-/* Check that the order macro parameter has a valid value */
-%if (&order in ASIS RAND) = 0 %then %do;
-  %put ERROR: Macro parameter "order" has to be specified as RAND or ASIS!;
-  %goto end_of_macro; 
-%end;
-
-/* Check that the caliper macro parameter is a numeric value or the 
-default AUTO value */
-%if %sysevalf((&caliper NE AUTO and %datatyp(&caliper) = CHAR) 
-  or &caliper. =  ) %then %do;
-  %put ERROR: Macro parameter "caliper" has to be a numeric value or the default value AUTO!;
-  %goto end_of_macro; 
-%end;
-
-/* Check that the save_info macro parameter has a valid value */
-%if (&save_info in N Y) = 0 %then %do;
-  %put ERROR: Macro parameter "save_info" has to be specifed as Y or N!;
-  %goto end_of_macro; 
-%end;
-
-/* Check that the specified E and ps variables are of the correct type */
-%local E_type ps_type;
-data _NULL_;
-  set  &in_ds(obs=1);
-  call symput("E_type", vtype(&E));
-  call symput("ps_type", vtype(&ps));
+/* in_ds: check that the input dataset has no variables with a "__" prefix. */
+data __ps_in_ds_var_names;
+  set &in_ds.(obs = 0);
 run;
 
-%if ^(%upcase(&E_type) = N) %then %do;
-  %put ERROR: The specifed E variable &E is not numeric!;
-  %goto end_of_macro; 
-%end;
-
-%if ^(%upcase(&ps_type) = N) %then %do;
-  %put ERROR: The specified ps variable &ps is not numeric!;
-  %goto end_of_macro; 
-%end;
-
-/* Check that the specified seed is an an integer */
-%if %sysfunc(int(&seed)) NE &seed %then %do;
-  %put ERROR: The specified seed &seed is not an integer!;
-  %goto end_of_macro; 
-%end;
-
-/* Check that the exposure only takes the values zero and/or one,
-and that the PS values lie in the interval (0;1) */
-%local E_values ps_min ps_max;
+%local in_ds_var_names;
 proc sql noprint;
-  select distinct &E, min(&ps), max(&ps) 
-          into :E_values separated by "$"
-               , :ps_min separated by "$"
-               , :ps_max separated by "$"
+  select lower(name) into: in_ds_var_names separated by " "
+  from sashelp.vcolumn
+  where libname = "WORK" and memname = "__PS_IN_DS_VAR_NAMES"
+    and name eqt "__";
+quit;
+
+%local i i_var;
+%do i = 1 %to %sysfunc(countw(&in_ds_var_names, %str( )));
+  %let i_var = %scan(&in_ds_var_names, &i, %str( ));
+  %put ERROR: Input dataset <in_ds> contains variable "&i_var".;
+  %put ERROR: All variables with a "__" prefix are protected variable names.;
+  %put ERROR: The input dataset is not allowed contain any such variables;
+  %put ERROR: to ensure that the macro will work as intended.;
+  %goto end_of_macro; 
+%end;
+
+/* Check specified variable names are valid and exists in the input data. */
+%local var_list i i_var j j_var ds_id rc;
+%let var_list = group_var ps_var;
+%if &by ne _null_ %then %let var_list = &var_list by;
+%do i = 1 %to %sysfunc(countw(&var_list, %str( )));
+  %let i_var = %scan(&var_list, &i, %str( ));
+  %do j = 1 %to %sysfunc(countw(&&&i_var, %str( )));
+    %let j_var = %scan(&&&i_var, &j, %str( ));
+    %if %sysfunc(nvalid(&j_var)) = 0 %then %do;
+      %put ERROR: Variable "&j_var" specified in <&i_var>;
+      %put ERROR: is not a valid SAS variable name!;
+      %goto end_of_macro;
+    %end;
+    %let ds_id = %sysfunc(open(&in_ds));
+    %if %sysfunc(varnum(&ds_id, &j_var)) = 0 %then %do;
+      %let rc = %sysfunc(close(&ds_id));
+      %put ERROR: Variable "&j_var" specified in <&i_var> does;
+      %put ERROR: not exist in the input dataset "&in_ds"!;
+      %goto end_of_macro; 
+    %end;
+    %let rc = %sysfunc(close(&ds_id));
+  %end; /* End of j-loop */
+%end; /*End of i-loop */
+
+/* Outcome dataset prefix needs to be a valid (libname.)member-name, where
+the member-name part can be 21 characters at the most, to make sure that
+the suffixes added to the prefix does not make the output dataset names exeed
+32 characters.
+Regular expression: (lib-name.)member-name, where the libname is
+optional. The libname must start with a letter, followed by 0-7 letters, 
+numbers or underscores and must end with a ".". Member-name part must start
+with a letter or underscore, and is followed by 0-20 letters, numbers or 
+underscores. The whole regular expression is case-insensitive. */
+%if %sysfunc(prxmatch('^([a-z][\w\d]{0,7}\.)*[\w][\w\d]{0,20}$', &out_pf)) = 0 
+  %then %do;
+  %put ERROR: Output dataset prefix specified in <out_pf> is invalid.;
+  %put ERROR: Must be speficied as (libname.)member-name and can only be 21 characters long at most!;
+  %goto end_of_macro; 
+%end;
+
+/* group_var: check only one variable specified. */
+%if %eval(%sysfunc(countw(&group_var, %str( ))) > 1) %then %do;
+  %put ERROR: Only one <group_var> variable can be specified!;
+  %goto end_of_macro;
+%end;
+
+/* group_var: check numerical variable. */
+%local group_var_vt;
+data _null_;
+  set &in_ds(obs = 1 keep = &group_var);
+  call symput("group_var_vt", vtype(&group_var));
+run;
+
+%if &group_var_vt ne N %then %do;
+  %put ERROR: <group_var> must be a numerical variable!;
+  %goto end_of_macro;
+%end;
+
+/* group_var: check no missing values. */
+%local group_var_nmiss;
+proc sql noprint;
+  select nmiss(&group_var) into :group_var_nmiss
+  from &in_ds;
+quit;
+%if &group_var_nmiss > 0 %then %do;
+  %put ERROR: <group_var> has missing values!;
+  %goto end_of_macro;
+%end;
+
+/* group_var: check variable has at most two values. */
+%local group_var_nval;
+proc sql noprint;
+  select count(distinct &group_var) into :group_var_nval 
     from &in_ds;
 quit;
 
-%do i = 1 %to %sysfunc(countw(&E_values, $));
-  %if (%scan(&E_values., &i, $) in 0 1) = 0 %then %do;
-    %put ERROR: The specified E variable &E has invalid values!;
+%if %eval(&group_var_nval > 2) %then %do;
+  %put ERROR: The variable "&group_var" specified in <group_var> takes more;
+  %put ERROR: than two different values!;
+  %goto end_of_macro; 
+%end;
+
+/* group_var: check only 0/1 values. */
+%local group_var_min group_var_max;
+proc sql noprint;
+  select min(&group_var), max(&group_var) 
+  into 
+  :group_var_min, :group_var_max
+  from &in_ds;
+quit;
+
+%if (&group_var_min in 0 1) = 0 or (&group_var_max in 0 1) = 0 %then %do;
+  %put ERROR: <group_var> can only take 0/1 values!;
+  %goto end_of_macro;
+%end;
+
+/* ps_var: check only one variable specified. */
+%if %eval(%sysfunc(countw(&ps_var, %str( ))) > 1) %then %do;
+  %put ERROR: Only one <ps_var> variable can be specified!;
+  %goto end_of_macro;
+%end;
+
+/* ps_var: check numerical variable. */
+%local ps_var_vt;
+data _null_;
+  set &in_ds(obs = 1 keep = &ps_var);
+  call symput("ps_var_vt", vtype(&ps_var));
+run;
+
+%if &ps_var_vt ne N %then %do;
+  %put ERROR: <ps_var> must be a numerical variable!;
+  %goto end_of_macro;
+%end;
+
+/* ps_var: check no missing values. */
+%local ps_var_nmiss;
+proc sql noprint;
+  select nmiss(&ps_var) into :ps_var_nmiss
+  from &in_ds;
+quit;
+
+%if &ps_var_nmiss > 0 %then %do;
+  %put ERROR: <ps_var> has missing values!;
+  %goto end_of_macro;
+%end;
+
+/* ps_var: check only values in (0;1). */
+%local ps_var_min ps_var_max;
+proc sql noprint;
+  select min(&ps_var), max(&ps_var) 
+  into 
+  :ps_var_min, :ps_var_max
+  from &in_ds;
+quit;
+
+%if %eval(&ps_var_min <= 0 or &ps_var_max >= 1) %then %do;
+  %put ERROR: <ps_var> takes values outside the interval (0%str(;)1)!;
+  %goto end_of_macro;
+%end;
+
+/* match_on: check valid value */
+%if (&match_on in ps logit_ps) = 0 %then %do;
+  %put ERROR: <match_on> does not have a valid value!;
+  %goto end_of_macro;
+%end;
+
+/* caliper: check value is auto or a positive number. 
+/* Check that the parameter is either auto or a (decimal) number. */
+%if %sysfunc(prxmatch('^auto$|^(\d+.)\d+$', &caliper)) = 0 %then %do;
+  %put ERROR: <caliper> must take the value "auto" or a be a positive number!;
+  %goto end_of_macro; 
+%end;
+/* Make sure that specified numbers are positive */
+%else %if %sysfunc(prxmatch('^(\d+.)\d+$', &caliper)) %then %do;
+  %if %sysevalf(&caliper <= 0) %then %do;
+    %put ERROR: <caliper> must take the value "auto" or a be a positive number!;
     %goto end_of_macro; 
   %end;
 %end;
 
-%if %sysevalf(%scan(&ps_min, 1, $) <= 0 or %scan(&ps_max, 1, $) >= 1) %then %do;
-  %put ERROR: The specified ps variable &ps takes values outside the interval (0%str(;)1)!;
+/* replace: check valid value */
+%if (&replace in y n) = 0 %then %do;
+  %put ERROR: <replace> does not have a valid value!;
+  %goto end_of_macro;
+%end;
+
+/* match_order: check valid value. */
+%if (&match_order in rand asis) = 0 %then %do;
+  %put ERROR: <match_order> does not have a valid value!;
+  %goto end_of_macro;
+%end;
+
+/* by: check no duplicates. */
+%local i i_var j cnt;
+%do i = 1 %to %sysfunc(countw(&by, %str( )));
+  %let i_var = %scan(&by, &i, %str( ));
+  %let cnt = 0;
+  %do j = 1 %to %sysfunc(countw(&by, %str( )));
+    %if &i_var = %scan(&by, &j, %str( )) 
+      %then %let cnt = %eval(&cnt + 1);
+  %end;
+  %if %sysevalf(&cnt > 1) %then %do;
+    %put ERROR: Variable "&i_var" is included multiple times in <by>;
+    %goto end_of_macro;
+  %end;
+%end;
+
+/* seed: check integer. */
+%if %sysfunc(prxmatch('^-*\d*$', &seed)) = 0 %then %do;
+  %put ERROR: <seed> must be an integer!;
   %goto end_of_macro; 
 %end;
 
-/* Check that there are no dublicate id values (in each strata defined by
-the specified by-variables) */
-proc sort data=&in_ds out = _ps_dup_dummy dupout=_ps_dup_id nodupkeys;
-  by %if &by NE %then %do; &by %end; &id;
-run;
-
-%local dup_N;
-proc sql noprint;
-  select count(*) into :dup_N
-    from _ps_dup_id;
-quit;
-
-%if &dup_N NE 0 %then %do;
-  %if &by NE %then %do;
-  %put ERROR: The specified id variable &id has duplicate values in one or more stratas of the specified by-variable(s)!;
-  %end;
-  %else %do;
-  %put ERROR: The specified id variable &id has duplicate values!;
-  %end;
-  %goto end_of_macro; 
+/* del: check parameter has valid value. */          
+%if %eval(&del in n y) = 0 %then %do;
+  %put ERROR: <del> does not have a valid value!;
+  %goto end_of_macro;
 %end;
 
 
-/*******************************************************************************	
-MAKE NEW BY-VARIABLE AND LOAD INPUT DATA
+/*******************************************************************************  
+LOAD INPUT DATA
 *******************************************************************************/
-/* We make a new (combined) by-variable so that all different scenarios
-of by-variable specifications can be handled in a manageable way */
-%if &by NE %then %do;
-  proc sort data=&in_ds(keep=&by) out=_ps_by_new1 nodupkeys;
-    by &by;
-  run;
 
-  data _ps_by_new2;
-    set _ps_by_new1;
-    format _by_dummy _by_new 10.;
-    _by_new = _n_;
-    _by_dummy = 1;
-  run;
-%end;
-%else %do;
-  data _ps_by_new2;
-    format _by_dummy _by_new 10.;
-    _by_new = 1;
-    _by_dummy = 1;
-    output;
-  run;
+%if &verbose = y %then %do;
+  %put ps_match: *** Load data ***;
 %end;
 
-data _ps_data1;
-  set &in_ds;
-  format _keep_order 20. _by_dummy 1.;
-  _keep_order = _n_;
-  _by_dummy = 1;
-run;
-
-proc sql;
-  create table _ps_data2 as
-    select b._by_new, a.*
-    from _ps_data1 as a
-    left join 
-    _ps_by_new2 as b
-    on a._by_dummy = b._by_dummy 
-    %if &by NE %then %do;
-      %do i = 1 %to %sysfunc(countw(&by, %str( )));
-        %let i_by = %scan(&by, &i, %str( ));
-        and a.&i_by = b.&i_by
-      %end;
-    %end;
-    order by _by_new, _keep_order;
-quit;
-
-
-/*******************************************************************************	
-ID VARIABLE INFORMATION
-*******************************************************************************/	
-/* Determining the type, length, and format of the id variable */
-%local id_type id_length id_format;
-proc sql noprint;
-	select type into: id_type
-		from sashelp.vcolumn
-		where libname="WORK" and memname="_PS_DATA1" and upcase(name)="%upcase(&id)";
-	select length into: id_length
-		from sashelp.vcolumn
-		where libname="WORK" and memname="_PS_DATA1" and upcase(name)="%upcase(&id)";
-	select format into: id_format
-		from sashelp.vcolumn
-		where libname="WORK" and memname="_PS_DATA1" and upcase(name)="%upcase(&id)";
-quit;
-%if &id_type = char %then %let id_length = %sysfunc(compress($&id_length));
-
-/*******************************************************************************	
-CACLULATE LOGIT(PS) AND SORT DATA
-*******************************************************************************/
-/* Calculate logit(ps) and randomly sort patients if specified. We make a 
-new ps variable where a very small random number has been added. Doing this 
-will ensure that if multiple exposed and/or unexposed patients have the same 
-ps, a random match is made among the closest matches instead of the same match 
-every time. */
-data _ps_data3;
+data __ps_dat1;
   call streaminit(&seed);
-  set _ps_data2(rename=(&E = _E &id = _id &ps = _ps));
-  _ps = _ps + rand("uniform") * 10**(-10);
-  _ps_logit = log(_ps / (1 - _ps));
-  _u = rand("uniform");
-  keep _by_new _id _E _ps_logit _u;
+  set &in_ds;
+  where &where;
+  __id = _n_;
+  /* Add a very small number to the ps. This will ensure that if multiple
+  observations have the same ps value, a random match will be made among
+  all observations with the same ps. */
+  __ps = &ps_var + rand("uniform") * 10**(-10);
+  /* Make sure that the modified ps does not violate the 0 < ps < 1
+  requirement. */
+  __ps = min(1 - 10**(-10), __ps);
+  __ps = max(0 + 10**(-10), __ps);
+  /* If matching is done on logit(ps), transform the __ps variable. */
+  %if &match_on = logit_ps %then %do;
+    __ps = log(__ps / (1 - __ps));
+  %end;
+  __rand_order = rand("uniform");
+  %if &by = _null_ %then %do;
+    __by_dummy = "dummy";
+  %end;
 run;
 
-%if &order = RAND %then %do;
-  proc sort data = _ps_data3 out = _ps_data3;
-    by _by_new _u;
-  run;
+%if &by = _null_ %then %let by = __by_dummy;
+
+/* If the specified where condition(s) results in any warnings or errors,
+the macro is terminated. */
+%if &syserr ne 0 %then %do;
+  %put ERROR- The specified <where> condition:;
+  %put ERROR- &where;
+  %put ERROR- produced a warning or an error. Macro terminated!;
+  %goto end_of_macro; 
 %end;
 
-/*******************************************************************************	
-CALCULATE CALIPER WIDTH
-*******************************************************************************/	
-/* Calculate the caliper width automatically if it has not been specified. The 
-caliper is chosen as 0.2 times the standard deviation of logit(ps). 
-See description for explanation. */
-proc means data=_ps_data3 noprint nway;
-  class _by_new _E;
-	var _ps_logit;
-	output out=_ps_caliper1 var=var;
+/* Make a combined by-variable */
+proc sort data = __ps_dat1(keep = &by) out = __ps_by_key1 nodupkeys;
+  by &by;
 run;
 
-data _ps_caliper2;
-  set _ps_caliper1;
-  by _by_new;
-  retain n_total n_E0 n_E1 var_E0 var_E1;
-  if first._by_new then do;
-    n_total = .;
-    n_E0 = .;
-    n_E1 = .;
-    var_E0 = .;
-    var_E1 = .;
+data __ps_by_key2;
+  set __ps_by_key1;
+  __by = _n_;
+run;
+
+/* Save number of by-variable stratas in macro variable. */
+%local n_strata;
+proc sql noprint;
+  select count(*) into :n_strata
+    from __ps_by_key2;
+quit;
+
+/* Replace by-variables in data and restrict to the variables needed
+to do the matching. */
+%local i i_var;
+proc sql;
+  create table __ps_dat2 as
+    select b.__by, a.&group_var, a.__id, a.__ps, a.__rand_order
+    from __ps_dat1 as a
+    left join
+    __ps_by_key2 as b
+    on
+    %do i = 1 %to %sysfunc(countw(&by, %str( )));
+      %let i_var = %scan(&by, &i, %str( ));
+      %if &i ne 1 %then %do; and %end;
+      a.&i_var = b.&i_var
+    %end;
+    ;
+quit;
+
+%if &verbose = y %then %do;
+  %put ps_match: - Create an index for fast subsetting of data;
+  %put ps_match:   during matching.;
+%end;
+
+/* Create index. */
+proc sort data = __ps_dat2 out = __ps_dat3(index = (__by &group_var) drop = __rand_order);
+	by __by &group_var  
+    %if &match_order = rand %then %do; __rand_order %end;
+    %else %do; __id %end;
+  ;
+run;
+
+
+/*******************************************************************************  
+CALCULATE CALIPER WIDTHS
+*******************************************************************************/
+
+%if &verbose = y %then %do;
+  %put ps_match: *** Calculate calipers ***;
+%end;
+ 
+/* Calculate the caliper as described in the details if <caliper> = auto. */
+proc means data = __ps_dat3 noprint nway;
+  class __by &group_var;
+  var __ps;
+  output out = __ps_caliper1 var = __var / noinherit;
+run;
+
+data __ps_caliper2;
+  set __ps_caliper1;
+  by __by &group_var;
+  retain __n_total __n_0 __n_1 __var_0 __var_1;
+  if first.__by then do;
+    __var_0 = __var;
+    __n_0 = _freq_;
   end;
-  if _E = 0 then do;
-    var_E0 = var;
-    n_E0 = _freq_;
+  else do;
+    __var_1 = __var;
+    __n_1 = _freq_;
   end;
-  if _E = 1 then do;
-    var_E1 = var;
-    n_E1 = _freq_;
-  end;
-  if last._by_new then do;
-    n_total = max(n_E0, 0) + max(n_E1, 0);
-    %if &caliper = AUTO %then %do;
-      caliper = 0.2 * sqrt((var_E0 + var_E1) / 2);
+  if last.__by then do;
+    __n_total = max(__n_0, 0) + max(__n_1, 0);
+    %if &caliper = auto %then %do;
+      __caliper = 0.2 * sqrt((__var_0 + __var_1) / 2);
     %end;
     %else %do;
-      caliper=&caliper;
+      __caliper = &caliper;
     %end;
     output;
   end;
-  drop _E var: _type_ _freq_;
+  drop &group_var _type_ _freq_;
 run;
 
-/* Make macro variable with caliper values */
+/* Make macro variable with caliper values for each by strata */
 %local calipers;
 proc sql noprint;
-  select caliper into :calipers separated by "$"
-    from _ps_caliper2;
+  select __caliper into :calipers separated by "$"
+    from __ps_caliper2;
 quit;
 
-/* If the calipers are automatically calculated but one or more are missing 
-because one or more variances could not be estimated, we write a warning in 
-the log */
-%local miss_caliper;
-%let miss_caliper = 0;
-%do i = 1 %to %sysfunc(countw(&calipers, $));
-  %if %scan(&calipers, &i, $) = . %then %let miss_caliper = 1;
+%if &verbose = y %then %do;
+  %put ps_match: - calipers:;
+  %put ps_match:   &calipers;
 %end;
 
-%if &miss_caliper %then %do;
-  %if &by = %then %do;
-    %put WARNING: The caliper could not be calculated!;
-  %end;
-  %if &by NE %then %do;
-    %put WARNING: One or more calipers could not be calculated!;
-    %put WARNING: No matching will be done in the corresponding by-variable stratas!;
-  %end;
+
+/******************************************************************************
+MATCHING
+******************************************************************************/
+
+%if &verbose = y %then %do;
+  %put ps_match: *** Matching ***;
 %end;
 
-/*******************************************************************************	
-MATCH
-*******************************************************************************/
-%local  by_values i_caliper i_start i_stop i_match_time match_start p points 
-        props p_point p_prop n_by;
-
-/* Save by-values in macro variable */
-proc sql noprint;
-    select _by_new into :by_values separated by "$"
-      from _ps_caliper2;
-quit;
-
-%let n_by = %sysfunc(countw(&by_values, $));
-
-/* Make macro variables with progress information */
-data _ps_progress;
-  format prop $20.;
+/* Find 10 approximately evenly spaced out strata values, and calculate the 
+percentage of progress that have been made at that point in the matching 
+process. */
+data __ps_progress;
   do i = 1 to 10;
-    point = ceil(i * &n_by / 10);
-    prop=compress(put(point, 10.) || "/" || "&n_by");
+    progress_strata = ceil(i * &n_strata / 10);
+    progress_pct = compress(put(progress_strata / &n_strata, percent10.));
     output;
   end;
   drop i;
 run;
 
+%local progress_strata progress_pct;
 proc sql noprint;
-  select distinct point, prop
-    into :points separated by "$" 
-         ,:props separated by "$"
-    from _ps_progress;
+  select distinct progress_strata, progress_pct
+    into :progress_strata separated by "$" 
+         ,:progress_pct separated by "$"
+    from __ps_progress;
 quit;
 
-/* Do matching in each by-variable strata */
-%let match_start = %sysfunc(datetime());
-%do i = 1 %to %sysfunc(countw(&by_values, $));
-  %let i_by = %scan(&by_values, &i, $);
+/* Disable notes in log irrespective of the value of the
+print_notes parameter. */
+options nonotes;
+
+/* Find matches in each strata. */
+%local i i_caliper;
+%do i = 1 %to &n_strata;
   %let i_caliper = %scan(&calipers, &i, $);
-  %let i_start = %sysfunc(datetime());
-
-  %if %eval(&by NE and &i = 1) %then %do;
-    %put WARNING- Datasets matched (total run-time hh:mm:ss):;
+  
+  %if &i = 1 %then %do;
+    %put Matching progress:;
+    %put %sysfunc(datetime(), datetime32.): %str(  0%%);
   %end;
 
-  data _ps_i_matched;
-    length _ps_logit _closest_dist 8 _id _id_E0 &id_length.;
-    /* Load the subset of unexposed patients into the hash object */
-    if _n_= 1 then do;
-      declare hash h( dataset: "_ps_data3(where = (_by_new = &i_by and _E = 0))"
-        ,ordered: "no");
-      declare hiter iter("h");
-      h.defineKey("_id");
-      h.defineData("_id", "_ps_logit");
-      h.defineDone();
-      call missing(_id, _ps_logit);
-    end;
-    /* Read observations from the subset of exposed patients */
-    set _ps_data3(where = (_by_new = &i_by and _E = 1) 
-                  rename = (_id = _id_E1 _ps_logit = _ps_logit_E1));
-    /* Iterate over the hash to find the closest match */
-    _closest_dist = .;
-    _rc= iter.first();
-    do while (_rc = 0);
-      if abs(_ps_logit_E1 - _ps_logit) <= &i_caliper and &i_caliper NE . then do;
-        _dist=abs(_ps_logit_E1 - _ps_logit);
-        if _closest_dist = . or _dist < _closest_dist then do;
-          _closest_dist = _dist;
-          _id_E0 = _id;
-        end;
-      end; 
-      _rc = iter.next();
-      /* Output the best match and remove the matched patient from the pool
-       of potential matches if matching is done without replacement. */
-      if (_rc ~= 0) and _closest_dist ~= . then do;
-        output;
-        %if %upcase(&replace) = N %then %do;
-          _rc1 = h.remove(key: _id_E0);
-        %end;
+  %local time_start;
+  %let time_start = %sysfunc(datetime());
+
+  /* Restrict and split data. */
+  data __ps_strata_group_1;
+    set __ps_dat3(where = (__by = &i and &group_var = 1));
+  run;
+
+  data __ps_strata_group_0;
+    set __ps_dat3(where = (__by = &i and &group_var = 0));
+    rename 
+      __ps = __ps_0
+      __id = __id_0
+    ;
+  run;
+
+  /* Find available memory in session. Taken from
+  https://sasnrd.com/sas-available-memory/
+  The xmrlmem option is undocumented, and I don't understand why
+  10e6 and not 1024**3 is the proper denominator... But it is clear from
+  testing that 1024**3 gives the wrong answer. */
+  %local avail_mem;
+  data _null_;
+    call symput("avail_mem", input(getoption('xmrlmem'), 20.2) / 10e6);
+  run;
+
+  /* Find size of dataset that is to be loaded into a hash object. */
+  %local size;
+  proc sql noprint;
+    select filesize / 1024**3 into :size
+      from sashelp.vtable
+      where libname = "WORK" and memname = "__PS_STRATA_GROUP_0";
+  quit;
+
+  %if &verbose = y %then %do;
+    %put ps_match: - Strata: &i;
+    %put ps_match:   Caliper: &i_caliper;
+    %put ps_match:   Available memory: %left(%qsysfunc(putn(&avail_mem, 20.2))) GB;
+    %put ps_match:   Size of hash object: %left(%qsysfunc(putn(&size, 20.2))) GB;
+  %end;
+
+  /* If the dataset can't fit in memory, terminate the macro. */
+  %if %eval(&size > &avail_mem) %then %do;
+    %put ERROR: Hash-table can%str(%')t fit in memory!;
+    %put ERROR: Hash-table size: %left(%qsysfunc(putn(&size, 20.2))) GB;
+    %put ERROR: Available memory: %left(%qsysfunc(putn(&avail_mem, 20.2))) GB;
+    %goto end_of_macro;  
+  %end;
+
+  /* Find number of patients in strata. */
+  %local n_strata_group_1 n_strata_group_0;
+  proc sql noprint;
+    select count(*) 
+      into :n_strata_group_1
+      from __ps_strata_group_1;
+    select count(*) 
+      into :n_strata_group_0
+      from __ps_strata_group_0;
+  quit;
+
+  /* If there are patients in both groups in the strata, and the caliper
+  is not missing, find matches for each patient with <group_var> = 1. */
+  %if &i_caliper ne . and &n_strata_group_1 > 0 and &n_strata_group_0 > 0 
+    %then %do;
+
+    data __ps_strata_matches;
+      length __ps_0 __closest_dist __closest_id __id_0 8;
+      /* Load potential matches into hash object */
+      if _n_= 1 then do;
+        declare hash h( dataset: "__ps_strata_group_0");
+        declare hiter iter("h");
+        h.defineKey("__id_0");
+        h.defineData("__id_0", "__ps_0");
+        h.defineDone();
+        call missing(__id_0, __ps_0);
       end;
-    end;
-    keep _by_new _id_E1 _id_E0;
-  run;
-
-  /* Combine matched data and info */
-  %if &i = 1 %then %do;
-    data _ps_matched1;
-      set _ps_i_matched;
+      /* Open dataset with patients for which we want to find matches. */
+      set __ps_strata_group_1;
+      /* Iterate over the hash object to find the closest match. */
+      __closest_dist = .;
+      __rc= iter.first();
+      do while (__rc = 0);
+        if abs(__ps - __ps_0) <= &i_caliper then do;
+          __dist = abs(__ps - __ps_0);
+          if __closest_dist = . or __dist < __closest_dist then do;
+            __closest_dist = __dist;
+            __closest_id = __id_0;
+          end;
+        end; 
+        __rc = iter.next();
+        /* Output closest match. */
+        if (__rc ~= 0) and __closest_dist ~= . then do;
+          output;
+          /* If matching without replacement, remove match from hash-table. */
+          %if &replace = n %then %do;
+            __rc1 = h.remove(key: __id_0);
+          %end;
+        end;
+      end;
+      keep __by __id __closest_id;
     run;
-  %end;
-  %else %do;
-    proc append base=_ps_matched1 data=_PS_i_matched;
-    run;
-  %end;
 
-  %let i_stop = %sysfunc(datetime());
-  %let i_match_time = %left(%qsysfunc(putn(%sysevalf(%sysevalf(&i_stop - &i_start)), time20.)));
-
-  data _ps_i_info; 
-    format _by_new 10. match_time $50.;
-    _by_new=&i_by;
-    match_time="&i_match_time";
-  run;
-  %if &i = 1 %then %do;
-    data _ps_info_time;
-      set _ps_i_info;
-    run;
-  %end;
-  %else %do;
-    proc append base=_ps_info_time data=_ps_i_info;
-    run;
-  %end;
-
-  /* Print progress information to the log */
-  %if &by NE %then %do;
-    %do p = 1 %to %sysfunc(countw(&points, $));
-      %let p_point = %scan(&points, &p, $);
-      %let p_prop = %scan(&props, &p, $);
-      %if &i = &p_point %then %do;
-        %put WARNING- &p_prop (%left(%qsysfunc(putn(%sysevalf(%sysevalf(&i_stop - &match_start)), time20.))));
-      %end;
+    /* If the matching results in any warnings or errors,
+    the macro is terminated. */
+    %if &syserr ne 0 %then %do;
+      %put ERROR- Matching resulted in a warning or error!;
+      %put ERROR- Check the log for warnings/errors indicating that;
+      %put ERROR- the hash-table could not fit in the memory.;
+      %goto end_of_macro; 
     %end;
   %end;
+  /* If a caliper is not defined in strata, or there are not patients in both
+  groups, create an empty dataset. */
+  %else %do;
+    data __ps_strata_matches;
+      set __ps_strata_group_1(obs = 0);
+      length __closest_id 8;
+      keep __by __id __closest_id;
+    run;
+  %end;
 
-%end; /* end of i-loop */
-
-
-/*******************************************************************************	
-RESTRUCTURE AND SAVE MATCHED DATA
-*******************************************************************************/	
-data _ps_matched2;
-  length _match 8 _id &id_length.;
-  format _match best12. _id &id_format.;
-  %if &by NE %then %do;
-    merge _ps_matched1(in = q1) _ps_by_new2;
-    if q1;
+  /* In some weird cases, using proc append to automatically create the
+  base dataset if it does not exist will fail. Therefore we will explictly
+  define it here, to make sure everything works as intended. */
+  %if &i = 1 %then %do;
+    data __ps_all_matches1;
+      set __ps_strata_matches;
+    run;    
   %end;
   %else %do;
-    set _ps_matched1;
+    /* Append matches from strata to dataset with all matches. */
+    proc append base = __ps_all_matches1 data = __ps_strata_matches;
+    run;
   %end;
-  by _by_new;
-  retain _match;
-  if first._by_new then _match = 0;
-  _match = _match + 1;
-  _id = _id_E1; output;
-  _id = _id_E0; output;
-  keep _by_new _match _id
-  %if &by NE %then %do; &by %end;
-  ;
+
+  %local time_stop duration;
+  %let time_stop = %sysfunc(datetime());
+  %let duration = %sysevalf(&time_stop - &time_start);
+
+  /* Estimate time until all matching is done, based on the median
+  matching time in the stratas so far. */
+  %local duration_all duration_median est_finish;
+  %if &i = 1 %then %let duration_all = &duration;
+  %else %let duration_all = &duration_all, &duration;
+  %let duration_median = %sysfunc(median(&duration_all));
+  %let est_finish = 
+    %left(%qsysfunc(
+      putn(
+        %sysevalf(&time_stop + &duration_median * (&n_strata - &i)), 
+        datetime32.
+      )
+    ));
+
+  /* Make dataset with info */
+
+  %local n_matches;
+  proc sql noprint;
+    select count(*) into :n_matches 
+    from __ps_strata_matches;
+  quit;
+
+  data __ps_strata_info;
+    retain __by __n_matches __n_group_1 __n_group_0 __n_total __caliper
+           __time __start_time __stop_time;
+    format __time time10. __start_time __stop_time datetime32.;
+    __by = &i;
+    __n_matches = &n_matches;
+    __n_group_1 = max(0, &n_strata_group_1);
+    __n_group_0 = max(0, &n_strata_group_0);
+    __n_total = __n_group_1 + __n_group_0;
+    __caliper = &i_caliper;
+    __start_time = &time_start;
+    __stop_time = &time_stop;
+    __time = &duration;
+    output;
+  run;
+
+  %if &i = 1 %then %do;
+    data __ps_all_info1;
+      set __ps_strata_info;
+    run;    
+  %end;
+  %else %do;
+    /* Append matches from strata to dataset with all matches. */
+    proc append base = __ps_all_info1 data = __ps_strata_info;
+    run;
+  %end;
+ 
+  /* Print matching progress info to log. */
+  %local j j_strata j_pct;
+  %do j = 1 %to %sysfunc(countw(&progress_strata, $));
+    %let j_strata = %scan(&progress_strata, &j, $);
+    %let j_pct = %scan(&progress_pct, &j, $);
+    %if &i = &j_strata %then %do;
+      %if &i ne &n_strata %then %do;
+        %put %sysfunc(datetime(), datetime32.): %str( &j_pct) (est. finish: &est_finish);
+      %end;
+      %else %do;
+        %put %sysfunc(datetime(), datetime32.): &j_pct (est. finish: &est_finish);
+      %end;
+    %end;
+  %end; /* End of j-loop */
+%end; /* End of i-loop */
+
+%if &print_notes = y %then %do;
+  options notes;
+%end;
+
+
+/*******************************************************************************  
+RESTRUCTURE AND SAVE MATCHED DATA
+*******************************************************************************/ 
+ 
+%if &verbose = y %then %do;
+  %put ps_match: *** Make matches output ***;
+%end;
+
+data __ps_all_matches2;
+  set __ps_all_matches1;
+  __match = _n_;
+  &group_var = 1;
+  output;
+  &group_var = 0;
+  __id = __closest_id;
+  output;
+  drop __closest_id;
 run;
 
+/* Merge with variables from input data */
 proc sql;
-  create table &out_ds as
-    select a._match, b.*
-      from _ps_matched2 as a
-      left join &in_ds as b
+  create table __ps_all_matches3 as
+    select a.__match, b.*
+      from __ps_all_matches2 as a
+      left join __ps_dat1 as b
       on 
-      a._id=b.&id
-      %if &by NE %then %do;
-          %do i = 1 %to %sysfunc(countw(&by, %str( )));
-            %let i_by = %scan(&by, &i, %str( ));
-            and a.&i_by= b.&i_by
-          %end;
-      %end;
-      order by a._by_new, a._match, b.&E desc;
+      a.__id = b.__id
+      order by __match, &group_var descending;
 quit;
 
+data &out_pf._matches;
+  set __ps_all_matches3;
+  %if &by = __by_dummy %then %do;
+    drop __by_dummy;
+  %end;
+  drop __id __ps __rand_order;
+run;
 
-/*******************************************************************************	
-SAVE INFO
-*******************************************************************************/
-%if &save_info = Y %then %do;	
-  proc means data=_ps_matched2 noprint nway;
-    class _by_new;
-    var _match;
-    output out = _ps_info_n_match(drop=_type_ _freq_) 
-      N(_match) = n_match / noinherit;
-  run;
+/*******************************************************************************  
+MAKE NON-MATCHED OUTPUT DATA
+*******************************************************************************/ 
 
-  data _ps_out_info1;
-    merge 
-      %if &by NE %then %do; _ps_by_new2(drop = _by_dummy) %end; 
-      _ps_caliper2 _ps_info_n_match _ps_info_time;
-    by _by_new;
-    label n_total = "Total number of patients"
-          n_E0 = "Number of unexposed patients"
-          n_E1 = "Number of exposed patients"
-          caliper = "Caliper used to match on logit(ps)"
-          n_match = "Number of matched exposed patients"
-          match_time = "Matching time (hh:mm:ss)"
-          ;
-    /* We need to divide n_match by two to get the correct number */
-    if n_match = . then n_match = 0;
-    n_match = n_match/2;
-  run;
-
-  proc sort data = _ps_out_info1 out = &out_ds._info(drop = _by_new);
-    by _by_new;
-  run;
+%if &verbose = y %then %do;
+  %put ps_match: *** Make non-matches output ***;
 %end;
+
+/* Merge matched id's to patients pre matching */
+proc sql;
+  create table __ps_no_matches1 as 
+    select a.*, b.__id as __id_match
+    from __ps_dat1(where = (&group_var = 1)) as a
+    left join
+    __ps_all_matches1 as b
+    on a.__id = b.__id;
+quit;
+
+/* Restrict to treated patients not included in the matched data. */
+data &out_pf._no_matches;
+  set __ps_no_matches1;
+  where __id_match = .;
+  drop __id __id_match __ps __rand_order;
+  %if &by = __by_dummy %then %do; drop __by_dummy; %end;
+run;
+  
+
+/*******************************************************************************  
+MAKE INFO OUTPUT DATA
+*******************************************************************************/ 
+
+%if &verbose = y %then %do;
+  %put ps_match: *** Make info output ***;
+%end;
+
+/* Merge by-variables to info */
+%local i i_var;
+proc sql;
+  create table __ps_all_info2 as
+    select 
+    %do i = 1 %to %sysfunc(countw(&by, %str( )));
+      %let i_var = %scan(&by, &i, %str( ));
+      b.&i_var,
+    %end;
+    a.*
+    from __ps_all_info1 as a
+    left join
+    __ps_by_key2 as b
+    on a.__by = b.__by;
+quit;
+
+data &out_pf._info;
+  set __ps_all_info2;
+  drop __by;
+  %if &by = __by_dummy %then %do; drop __by_dummy; %end;
+run;
 
 
 %end_of_macro:
 
+/* Delete temporary datasets created by the macro. */
+%if &del ne n  %then %do;
+  proc datasets nodetails nolist;
+    delete __ps_:;
+  run;
+  quit;
+%end; 
 
-%if &del = Y %then %do;
-	proc datasets nodetails nolist;
-		delete _ps_:;
-	run;
-	quit;
-%end;
+/* Restore value of notes option */
+options &opt_notes;
+
+%put ps_match: end execution;
 
 %mend ps_match;
