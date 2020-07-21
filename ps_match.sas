@@ -1,11 +1,3 @@
-/*
-todo:
-
-2) chekc local statements
-3) rerun all tests
-4) rerun example
-*/
-
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
 VERSION:    0.1.1
