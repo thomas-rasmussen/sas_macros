@@ -22,6 +22,14 @@ PARAMETERS:
 *** REQUIRED ***
 in_ds:          (libname.)member-name of input dataset with treated/exposed and 
                 untreated/unexposed patients.
+group_var:      Grouping variable. Must be anumeric variable taking 0/1 values.
+                Matching is done for each observation with <group_var> = 1,
+                usually the treated/exposed patients.
+                Defaults to group_var = group to facilitate use of the macro.
+ps_var:         Name of ps variable. Must be a numeric variable where
+                0 < ps_var < 1 for all patients.
+                Defaults to ps_var = ps to facilitate use of the macro.
+*** OPTIONAL ***
 out_pf:         (libname.)member-name prefix of output datasets. The following
                 datasets are created by the macro:
                 - <out_pf>_matches: matched population. 
@@ -29,12 +37,7 @@ out_pf:         (libname.)member-name prefix of output datasets. The following
                 no match could be found.
                 - <out_pf>_info: miscellaneous information and diagnostics of 
                 the matching procedure.
-group_var:      Grouping variable. Must be anumeric variable taking 0/1 values.
-                Matching is done for each observation with <group_var> = 1,
-                usually the treated/exposed patients.
-ps_var:         Name of ps variable. Must be a numeric variable where
-                0 < ps_var < 1 for all patients.
-*** OPTIONAL ***
+                Default prefix is "_ps_match".
 match_on:       Should matching be done on the ps or logit(ps)?
                 - ps: match_on = ps
                 - logit(ps): match_on = logit_ps (default)
@@ -70,9 +73,9 @@ del:            Delete intermediate datasets created by the macro:
 ******************************************************************************/
 %macro ps_match(
   in_ds         = ,
-  out_pf        = ,
-  group_var     = ,
-  ps_var        = ,
+  group_var     = group,
+  ps_var        = ps,
+  out_pf        = _ps_match,
   match_on      = logit_ps,
   caliper       = auto,
   replace       = y,

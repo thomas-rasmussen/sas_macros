@@ -133,6 +133,8 @@ Efficient propensity score pair matching using a hash-table merge.
 
 - It is now possible to specify the match ID variable name in the output using the match_id_name parameter.
 
+- Default values have been added to out_pf (_ps_match), group_var(group), and ps_var(ps) to facilitate use of macro.
+
 **Version 0.1.2**
 
 - Fixed bug causing matching without replacement (replace = n) to not work as intended.
