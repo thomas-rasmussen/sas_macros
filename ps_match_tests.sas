@@ -30,6 +30,7 @@ parameters (except <where>) are missing. */
 %ps_match(in_ds = dat, match_order = );
 %ps_match(in_ds = dat, by = );
 %ps_match(in_ds = dat, match_id_name = );
+%ps_match(in_ds = dat, jitter_ps = );
 %ps_match(in_ds = dat, print_notes = );
 %ps_match(in_ds = dat, verbose = );
 %ps_match(in_ds = dat, seed = );
@@ -183,6 +184,17 @@ triggers more informatie error message. */
 %ps_match(in_ds = dat, match_id_name = $jhw);
 
 
+/*** jitter_ps tests ***/
+
+
+/* Check invalid value triggers error. */
+%ps_match(in_ds = dat, jitter_ps = abc);
+
+/* Check valid values work. */
+%ps_match(in_ds = dat, jitter_ps = n);
+%ps_match(in_ds = dat, jitter_ps = y);
+
+
 /*** print_notes tests ***/
 
 /* Check invalid value triggers error. */
@@ -242,7 +254,8 @@ Specific tests
 ******************************************************************************/
 
 /*** Check that random matches are made in cases where multiple ps's are equally
-close. ***/
+close if jitter_ps = y, but that the same person is used as a match if
+jitter_ps = n ***/
 data dat;
   do i = 1 to 1000;
     id = 1; group = 1; ps = 0.5; output;
@@ -257,11 +270,18 @@ data dat;
   drop i;
 run;
 
-%ps_match(in_ds = dat, match_on = ps, caliper = 0.1, seed = 1);
+%ps_match(in_ds = dat, match_on = ps, caliper = 0.1, seed = 1, jitter_ps = y);
 
 proc means data = _ps_match_matches nway noprint;
   class id;
-  output out = equal_ps_test n(id) = test;
+  output out = jitter n(id) = n;
+run;
+
+%ps_match(in_ds = dat, match_on = ps, caliper = 0.1, seed = 1, jitter_ps = n);
+
+proc means data = _ps_match_matches nway noprint;
+  class id;
+  output out = no_jitter n(id) = n;
 run;
 
 

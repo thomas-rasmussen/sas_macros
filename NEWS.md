@@ -135,6 +135,8 @@ Efficient propensity score pair matching using a hash-table merge.
 
 - Default values have been added to out_pf (_ps_match), group_var(group), and ps_var(ps) to facilitate use of macro.
 
+- A jitter_ps parameter has been added that can be used to control whether or not small amounts of random noise is added to the ps values. This is done by default to ensure that random matches are made in scenarios where there are multiple persons with the same ps. This is important if the ps only takes discrete values, but this can now be disabled if the user does not want this behavior.
+
 **Version 0.1.2**
 
 - Fixed bug causing matching without replacement (replace = n) to not work as intended.

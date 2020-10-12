@@ -57,7 +57,13 @@ where:          Condition(s) used to to restrict the input dataset in a where-
 by:             Space-separated list of by-variables. Default is by = _null_,
                 ie no by-variables.
 match_id_name:  Specify the name of the match id variable in the output.
-                Default name is "__match"
+                Default name is "__match".
+jitter_ps:      Add a small amount of noise to ps's to ensure that random
+                matches are made in case multiple persons have the same ps.
+                This is particularly in important if the ps only takes discrete
+                values!
+                - Yes: jitter_ps = y (default)
+                - No:  jitter_ps = n
 print_notes:    Print notes in log?
                 - Yes: print_notes = y
                 - No:  print_notes = n (default)
@@ -83,6 +89,7 @@ del:            Delete intermediate datasets created by the macro:
   where         = %str(),
   by            = _null_,
   match_id_name = __match,
+  jitter_ps     = y,
   print_notes   = n,
   verbose       = n,
   seed          = 0,
@@ -143,7 +150,7 @@ INPUT PARAMETER CHECKS
 /* Check remaining macro parameters (except where) not empty. */
 %local parms i i_parm;
 %let parms =  in_ds out_pf group_var ps_var match_on caliper replace 
-              match_order by match_id_name seed del;   
+              match_order by match_id_name jitter_ps seed del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
   %if %bquote(&&&i_parm) = %then %do;
@@ -408,6 +415,11 @@ quit;
   %end;
 %end;
 
+/* jitter_ps: check parameter has valid value. */          
+%if %eval(&jitter_ps in n y) = 0 %then %do;
+  %put ERROR: <jitter_ps> does not have a valid value!;
+  %goto end_of_macro;
+%end;
 
 /* seed: check integer. */
 %if %sysfunc(prxmatch('^-*\d*$', &seed)) = 0 %then %do;
@@ -435,14 +447,17 @@ data __ps_dat1;
   set &in_ds;
   where &where;
   __id = _n_;
-  /* Add a very small number to the ps. This will ensure that if multiple
-  observations have the same ps value, a random match will be made among
-  all observations with the same ps. */
-  __ps = &ps_var + rand("uniform") * 10**(-10);
-  /* Make sure that the modified ps does not violate the 0 < ps < 1
-  requirement. */
-  __ps = min(1 - 10**(-10), __ps);
-  __ps = max(0 + 10**(-10), __ps);
+  __ps = ps;
+  %if &jitter_ps = y %then %do;
+    /* Add a very small number to the ps. This will ensure that if multiple
+    observations have the same ps value, a random match will be made among
+    all observations with the same ps. */
+    __ps = &ps_var + rand("uniform") * 10**(-10);
+    /* Make sure that the modified ps does not violate the 0 < ps < 1
+    requirement. */
+    __ps = min(1 - 10**(-10), __ps);
+    __ps = max(0 + 10**(-10), __ps);
+  %end;
   /* If matching is done on logit(ps), transform the __ps variable. */
   %if &match_on = logit_ps %then %do;
     __ps = log(__ps / (1 - __ps));
