@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.1.2
+VERSION:    0.1.3
 ********************************************************************************
 DESCRIPTION:
 Propensity score (ps) pair matching using nearest neighbor matching 

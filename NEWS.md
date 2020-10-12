@@ -129,6 +129,10 @@ macro. See examples.
 
 Efficient propensity score pair matching using a hash-table merge.
 
+**Version 0.1.3**
+
+- 
+
 **Version 0.1.2**
 
 - Fixed bug causing matching without replacement (replace = n) to not work as intended.
