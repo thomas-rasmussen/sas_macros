@@ -486,29 +486,51 @@ run;
 
 /*** Manual check that matching with and without replacement works as
 intended. ***/
+
 data dat;
-  id = 1; group = 1; ps = 0.5; output;
-  id = 2; group = 1; ps = 0.5; output;
-  id = 3; group = 0; ps = 0.5; output;
+  call streaminit(123);
+  do i = 1 to 1000;
+    id = i;
+    exposure = rand("bernoulli", 0.5);
+    ps = rand("uniform");
+    output;
+  end;
+  drop i;
 run;
+
 %ps_match(
-  in_ds = dat, 
-  out_pf = out, 
-  group_var = group, 
-  ps_var = ps, 
-  match_on = ps,
-  caliper = 0.1,
-  replace = y
-);
+  in_ds = dat,
+  out_pf = out,
+  group_var = exposure,
+  ps_var = ps,
+  replace = n,
+  seed = 1
+  );
+
+proc sql;
+  create table no_replace as
+    select distinct id, exposure, count(*) as n
+    from out_matches
+    group id, exposure
+    order by n descending;
+quit;
+
 %ps_match(
-  in_ds = dat, 
-  out_pf = out, 
-  group_var = group, 
-  ps_var = ps, 
-  match_on = ps,
-  caliper = 0.1,
-  replace = n
-);
+  in_ds = dat,
+  out_pf = out,
+  group_var = exposure,
+  ps_var = ps,
+  replace = y,
+  seed = 1
+  );
+
+proc sql;
+  create table replace as
+    select distinct id, exposure, count(*) as n
+    from out_matches
+    group id, exposure
+    order by n descending;
+quit;
 
 
 /*** Missing data tests  ***/
@@ -672,8 +694,8 @@ run;
   ps_var = ps
 );
 
-/* Approximately 4min for a relatively large population with 100,000 
-observation, where approximately 50,000 matches has to be tested
-for each treated patient. Not bad, but doesn't feel great either.
-Probably not faster to do a Cartesian join and do the matching in
-a data-step? Would also generate a very large intermediate dataset. */
+/* Approximately 4min (on a relatively powerful server) for a relatively large 
+population with 100,000 observation, where approximately 50,000 matches has to 
+be tested for each treated patient. Not bad, but doesn't feel great either. On
+the other hand, limited testing suggests that using eg a Cartesian join approach 
+is way less effective.  */

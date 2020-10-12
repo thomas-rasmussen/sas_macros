@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.1.1
+VERSION:    0.1.2
 ********************************************************************************
 DESCRIPTION:
 Propensity score (ps) pair matching using nearest neighbor matching 
@@ -666,7 +666,7 @@ options nonotes;
           output;
           /* If matching without replacement, remove match from hash-table. */
           %if &replace = n %then %do;
-            __rc1 = h.remove(key: __id_0);
+            __rc1 = h.remove(key: __closest_id);
           %end;
         end;
       end;
