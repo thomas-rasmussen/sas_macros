@@ -29,6 +29,7 @@ parameters (except <where>) are missing. */
 %ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, replace = );
 %ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, match_order = );
 %ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, by = );
+%ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, match_id_name = );
 %ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, print_notes = );
 %ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, verbose = );
 %ps_match(in_ds = dat, out_pf = out, group_var = group, ps_var = ps, seed = );
@@ -284,6 +285,36 @@ run;
   group_var = group, 
   ps_var = ps,
   by = by_num by_char
+);
+
+
+/*** match_id_name tests ***/
+
+/* Check renaming works. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  ps_var = ps,
+  group_var = group,
+  match_id_name = match
+);
+
+/* Check error if input varialble name clash. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  ps_var = ps,
+  group_var = group,
+  match_id_name = id
+);
+
+/* Check error if invalid SAS variable name. */
+%ps_match(
+  in_ds = dat, 
+  out_pf = out, 
+  ps_var = ps,
+  group_var = group,
+  match_id_name = $jhw
 );
 
 

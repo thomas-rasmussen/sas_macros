@@ -131,7 +131,7 @@ Efficient propensity score pair matching using a hash-table merge.
 
 **Version 0.1.3**
 
-- 
+- It is now possible to specify the match ID variable name in the output using the match_id_name parameter.
 
 **Version 0.1.2**
 
