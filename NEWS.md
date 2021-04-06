@@ -140,3 +140,11 @@ Produces a so-called "table 1" with aggregated patient characteristics
 - It is now possible to choose what statistics to calculate for each separate
   variable in var_list using the var_stats macro parameter.
   
+  
+### risk_time
+  
+Stratification and summarization of risk-time
+  
+**Version 0.1.0
+
+- Made complete overhaul of old macro and added it to this repository 
