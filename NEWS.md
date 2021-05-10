@@ -4,6 +4,15 @@
 
 First version of empirical_cdf macro that calculates the empirical cumulative distribution function for a variable.
 
+### calculate_cci
+
+Calculates the Charlson Comorbidity Index(CCI).
+
+**Version 0.0.1**
+
+First version of macro, based on old syntax.
+
+
 ### calculate_sd
 
 **Version 0.1.0**
@@ -145,6 +154,6 @@ Produces a so-called "table 1" with aggregated patient characteristics
   
 Stratification and summarization of risk-time
   
-**Version 0.1.0
+**Version 0.1.0**
 
 - Made complete overhaul of old macro and added it to this repository 
