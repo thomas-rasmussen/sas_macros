@@ -157,3 +157,9 @@ Stratification and summarization of risk-time
 **Version 0.1.0**
 
 - Made complete overhaul of old macro and added it to this repository 
+
+**Version 0.1.1**
+
+- yymmddw. is now accepted as a valid date format.
+
+

@@ -309,3 +309,30 @@ run;
   stratify_by = id,
   risk_time_unit = years
 );
+
+/*******************************************************************************
+TEST DATE FORMATS
+*******************************************************************************/
+
+data dat5;
+  format fu_start date9. fu_end yymmdd10. fu_end_dt datetime20.;
+  id = 1;
+  birth_date = 1;
+  fu_start = 2;
+  fu_end = 3;
+  fu_end_dt = fu_end;
+run;
+
+/* Test that the date variables accepts different formats from the list of
+recognized date formats. */
+%risk_time(
+  in_ds = dat5,
+  out_ds = test_fmt1
+);
+
+/* Test that unrecognized/invalid formats trigger an error. */
+%risk_time(
+  fu_end = fu_end_dt,
+  in_ds = dat5,
+  out_ds = test_fmt2
+);

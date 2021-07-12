@@ -1,5 +1,5 @@
 /*******************************************************************************
-AUTHOR:     Thomas Bï¿½jer Rasmussen
+AUTHOR:     Thomas Bøjer Rasmussen
 VERSION:    0.1.1
 ********************************************************************************
 DESCRIPTION:
@@ -378,13 +378,11 @@ run;
         __fail_start_is_num __fail_start_is_date __fail_start_format
         __fail_end_is_num   __fail_end_is_date   __fail_end_format;
 
-/* List of formats that is recognized as a (potential) data format by
-the macro. This is probably not the best approach, revise in the future
-is it becomes a common problem that users uses date formats that is not
-recognized. */
+/* List of recognized date formats. This is probably not the best approach.
+Revise in the future if it causes problems for users. */
 %local date_formats;
 %let date_formats = 
-  "" "DATE" "E8601DA"
+  "" "DATE" "E8601DA" "YYMMDD"
   "DDMMYY" "DDMMYYB" "DDMMYYC" "DDMMYYD" "DDMMYYN" "DDMMYYP" "DDMMYYS" 
   "DDMMYY" "EURDFDE" "EURDFWDX" "EURDFWKX" "MINGUO" "MMDDYY" "MMDDYYB" 
   "MMDDYYC" "MMDDYYD" "MMDDYYN" "MMDDYYP" "MMDDYYS"
