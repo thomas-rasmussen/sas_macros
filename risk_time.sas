@@ -1,6 +1,6 @@
 /*******************************************************************************
-AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.1.0
+AUTHOR:     Thomas Bï¿½jer Rasmussen
+VERSION:    0.1.1
 ********************************************************************************
 DESCRIPTION:
 Stratification and summarization of risk-time. By default, risk-time
