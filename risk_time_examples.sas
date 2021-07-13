@@ -43,15 +43,15 @@ ADVANCED EXAMPLE
 *******************************************************************************/
 
 /* It could be that we are not interested in stratifying risk-time by age and 
-calendar year, but by age and sex. We can do this by using the <stratify_year> 
-and <stratify_by> parameters to specify that we do not want to stratify by 
-calendar year, but at the same time that we want to stratify by gender. 
-Furthermore, we might want the risk-time to be given in days instead of years. 
-We can control this using the <risk_time_unit> parameter. */
+calendar year, but by age and sex. We can do this by using the <stratify_by> 
+parameter to specify that we do not want to stratify by calendar year (by
+removing _year_ from the list) but at the same time that we want to stratify by 
+gender (by adding the male variable to the list). Furthermore, we might want 
+the risk-time to be given in days instead of years. We can control this using 
+the <risk_time_unit> parameter. */
 %risk_time(
   in_ds           = dat1,
   out_ds          = advanced1,
-  stratify_year   = n,
-  stratify_by     = male,
+  stratify_by     = _age_ male,
   risk_time_unit  = days
 );

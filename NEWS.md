@@ -162,4 +162,15 @@ Stratification and summarization of risk-time
 
 - yymmddw. is now accepted as a valid date format.
 
+- Macro now prints the time at start and end of execution.
+
+- Changed how stratification variables are specified. The <stratify_year> and <stratify_age> 
+  have been removed, and <stratify_by> now has default value stratify_by = _year_ _age_, 
+  which specifies that the specified <birth_date>, <fu_start> and <fu_end> variables are used to
+  stratify by calender year and age. Additional (constant) variables can still be specified to
+  make additional stratifications. (issue #31)
+  
+- Macro is now considerably faster, especially when stratification is not done on both age and
+  calendar year. (issue #31)
+
 
