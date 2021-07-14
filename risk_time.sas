@@ -15,18 +15,10 @@ DETAILS:
 Splitting up risk-time, eg when estimating standardized rates, is straight 
 forward when the variables to standardize with respect to are treated as 
 constant, eg gender. But usually, stratification by age and/or calendar-year is 
-needed, and in this case of (monotonic) "time-dependent" variables the situation
+needed, and in this case of (monotonic) time-dependent variables, the situation
 is more complex. This macro facilitates splitting up and summarizing risk-time 
 in this case, and can also be used to stratify by additional (constant)
 variables.
-
-By convention, if follow-up starts and end on the same day, that will count
-as zero days of follow-up. Based on this convention, if follow-up ends on
-the day after start of follow-up, that will count as one day of follow-up,
-or alternatively as 1/365 or 1/366 years of follow-up depending on
-whether or not the follow-up is in a leap-year or not. Expanding on this, if
-a person starts follow-up on 2001-01-01, and ends follow-up on 2001-12-31, that
-is 364 days or 364/365 years of follow-up, not 365 days or 1 year.
 
 The macro was originally inspired by 
 Macaluso M. "Exact stratification of person-years". Epidemiology. 1992 
@@ -56,9 +48,8 @@ risk_time_unit: Specify the unit the summarized risk-time is reported in.
                 - Years: risk_time_unit = years (default)
                 - Days: risk_time_unit = days
                 If <stratify_by> includes _year_ (see below), then leap-years
-                are taken into account in an exact manner. If <stratify_by> 
-                does not include _year_ then the risk_time in days is simply 
-                divided by 365.25.
+                are taken into account when calculating the risk-time in years. 
+                If not, then the risk_time in days is divided by 365.25.
 where:          Condition(s) used to to restrict the input dataset in a where-
                 statement. Use the %str function as a wrapper, eg 
                 where = %str(var = "value").
