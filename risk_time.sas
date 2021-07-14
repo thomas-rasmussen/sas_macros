@@ -559,8 +559,8 @@ STRATIFY PERSON TIME
 
 %local max_ite_reached;
 
-/* Calculate risk-time in each strata specified in <stratify_by_td> for 
-each person. */
+/* Calculate risk-time in each strata of monotonic time-dependent variables 
+specified in <stratify_by_td> for each person. */
 data __rt_strat1;
 	set __rt_dat2;
   format __current_date __next_event yymmdd10.;
@@ -570,28 +570,27 @@ data __rt_strat1;
   %end;
   %if _year_ in &stratify_by_td %then %do;
     length _year_ 3.;
-    format __current_year __event_year yymmdd10.;
+    format __current_year __event_new_year yymmdd10.;
   %end;
 
   __cnt = 0;
   __stop = 0;
 
-  %if _age_ in &stratify_by_td %then %do;
-    __age_start = floor(yrdif(__birth_date, __fu_start, "age"));
-    __current_age = __age_start;
-  %end;
+  /* Initialize variables at start of risk-time period. */
   __current_date = __fu_start;
-  
+  %if _age_ in &stratify_by_td %then %do;
+    __current_age = floor(yrdif(__birth_date, __current_date, "age"));
+  %end;
   %if _year_ in &stratify_by_td %then %do;
-  __current_year = year(__fu_start);
+    __current_year = year(__current_date);
   %end;
 
   do while (__stop = 0);
     __cnt = __cnt + 1;
 
-    /* Find next event: new year, birthday or end of follow_up */
+    /* Find date of next event(s): new year, birthday or end of follow_up */
     %if _year_ in &stratify_by_td %then %do;
-      __event_year = mdy(1, 1, __current_year + 1);
+      __event_new_year = mdy(1, 1, __current_year + 1);
     %end;
     %if _age_ in &stratify_by_td %then %do;
       __event_birthday = intnx("year", __birth_date, __current_age + 1, "same");
@@ -599,21 +598,47 @@ data __rt_strat1;
     __next_event = min(
       __fu_end
       %if _year_ in &stratify_by_td %then %do;
-        , __event_year
+        , __event_new_year
       %end;
       %if _age_ in &stratify_by_td %then %do;
         , __event_birthday
       %end;
     );
 
-    /* Calculate risk-time in strata and output */
+    /* Find age and year value in risk-time strata */
     %if _age_ in &stratify_by_td %then %do;
       _age_ = __current_age;
     %end;
     %if _year_ in &stratify_by_td %then %do;
       _year_ = __current_year;
     %end;
-    __risk_time = __next_event - __current_date;
+
+    /* If it is the last strata and it is only one day long, set length
+    risk time in strata to one day. */
+    if __current_date = __fu_end then do;
+      __risk_time = 1;
+      __stop = 1;
+    end;
+    /* Else, if the next event is end of follow-up, and only end of follow-up, 
+    then we are also on in the last strata of risk time. */
+    else if __next_event = __fu_end 
+      %if _age_ in &stratify_by_td %then %do;
+        and __next_event ne __event_birthday
+      %end;
+      %if _year_ in &stratify_by_td %then %do;
+        and __next_event ne __event_new_year 
+      %end;
+        then do;
+      __risk_time = __next_event - __current_date + 1;
+      __stop = 1;
+    end;
+    /* Else, the current strata is not the last strata, and we do not
+    include the __next_event day in risk-time, since it needs to be allocated
+    to the next strata. */
+    else do;
+      __risk_time = __next_event - __current_date;
+    end;
+
     %if &risk_time_unit = years and _year_ in &stratify_by_td %then %do;
       /* Determine if the current year is a leap year to correctly
       find the number of days in the year. */
@@ -630,21 +655,19 @@ data __rt_strat1;
     %else %if &risk_time_unit = years %then %do;
       __risk_time = __risk_time / 365.25;
     %end;
+
     output;
 
-    /* Update variables */
+   /* Update variables */
     __current_date = __next_event;
     %if _year_ in &stratify_by_td %then %do;
-      if (__next_event = __event_year) 
+      if (__next_event = __event_new_year) 
         then __current_year = __current_year + 1;
     %end;
     %if _age_ in &stratify_by_td %then %do;
       if (__next_event = __event_birthday) 
         then __current_age = __current_age + 1;
     %end;
-
-    /* if fu_end is next event then exit loop */
-    if __next_event = __fu_end then __stop = 1;
 
     /* Use max counter iterator to protect against infinite loops. */
     if __cnt > &max_ite then do;

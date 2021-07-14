@@ -154,9 +154,6 @@ Produces a so-called "table 1" with aggregated patient characteristics
   
 Stratification and summarization of risk-time
   
-**Version 0.1.0**
-
-- Made complete overhaul of old macro and added it to this repository 
 
 **Version 0.1.1**
 
@@ -173,4 +170,11 @@ Stratification and summarization of risk-time
 - Macro is now considerably faster, especially when stratification is not done on both age and
   calendar year. (issue #31)
 
+- Changed how days of risk-time is counted in (age/year) stratas. Before, if a person entered and exited the
+  strata on the same day, then this would count as zero days of risk-time. This has now been changed to count as 
+  one day of follow-up.
+   
 
+**Version 0.1.0**
+
+- Made complete overhaul of old macro and added it to this repository 

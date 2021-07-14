@@ -107,6 +107,7 @@ run;
 %risk_time(in_ds = dat1, out_ds = test5, risk_time_unit = years);
 %risk_time(in_ds = dat1, out_ds = test5, risk_time_unit = days);
 
+
 /*** <stratify_by> tests ***/
 
 /* Check variables not in data triggers error */
@@ -139,7 +140,7 @@ run;
 /* Check that low value triggers error because max iteration is reached */
 %risk_time(in_ds = dat1, out_ds = test9, max_ite = 1);
 
-/* Check max_ite = _auto_ correctly sets a value accoridng to what is included
+/* Check max_ite = _auto_ correctly sets a value according to what is included
 in stratify_by */
 %risk_time(in_ds = dat1, out_ds = test9, stratify_by = _null_, verbose = y);
 %risk_time(in_ds = dat1, out_ds = test9, stratify_by = _age_, verbose = y);
