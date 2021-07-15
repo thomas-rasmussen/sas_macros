@@ -57,14 +57,15 @@ code_type:        Type of codes included in <diag_code>. It is assumed that
                   Valid values:
                   - code_type = sks (Default)
                   - code_type = icd
-lookback_period:  Lookback period from <index_date> used to determine which
-                  diagnoses to include when calculating the CCI. By default
-                  lookback_period = 200 together with 
+lookback_length:  Lookback length from <index_date> defining the lookback
+                  period in which we look for diagnoses to include when 
+                  calculating the CCI. By default
+                  lookback_length = 200 together with 
                   lookback_unit = year, ie a lookback period of 200 years,
                   in practice meaning that we use all available data on
                   diagnoses before the index date to calculate the CCI. 
                   Must be a non-negative integer. 
-lookback_unit:    Unit of the lookback period specified in <lookback_period>.
+lookback_unit:    Unit of the lookback length specified in <lookback_length>.
                   - lookback_unit = year (Default)
                   - lookback_unit = month
                   - lookback_unit = week
@@ -104,7 +105,7 @@ del:              Delete intermediate datasets created by the macro?
   diag_code       = diag_code,
   diag_date       = diag_date,
   code_type       = sks,
-  lookback_period = 200,
+  lookback_length = 200,
   lookback_unit   = year,
   exclude_groups  = null,
   keep_pop_vars   = y,
@@ -168,7 +169,7 @@ INPUT PARAMETER CHECKS
 /* Check remaining macro parameters not empty. */
 %local parms i i_parm;
 %let parms =  pop_ds diag_ds out_ds codes_ds id index_date diag_code       
-              diag_date code_type lookback_period lookback_unit   
+              diag_date code_type lookback_length lookback_unit   
               exclude_groups keep_pop_vars keep_cci_vars del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
@@ -346,9 +347,9 @@ input data. */
   %goto end_of_macro;
 %end;
 
-/* lookback_period: check non-negative integer */
-%if %sysfunc(prxmatch('^\d*$', &lookback_period)) = 0 %then %do;
-  %put ERROR: <lookback_period> must be a a non negative integer!;
+/* lookback_length: check non-negative integer */
+%if %sysfunc(prxmatch('^\d*$', &lookback_length)) = 0 %then %do;
+  %put ERROR: <lookback_length> must be a a non negative integer!;
   %goto end_of_macro; 
 %end;
 
@@ -753,7 +754,7 @@ data &out_ds;
   %do i = 1 %to 19;
     /* __tmp is the start date of the lookback period, ie the index date
     minus some number of days/weeks/months/years. */
-    __tmp = intnx("&lookback_unit", &index_date, -&lookback_period, "same");
+    __tmp = intnx("&lookback_unit", &index_date, -&lookback_length, "same");
     if __group = &i and __tmp <= &diag_date < &index_date
       then cci_&i = 1;
   %end;

@@ -35,7 +35,7 @@ are set to not being specified. */
 %macro _test1;
 %local opt_vars i i_var;
 %let opt_vars = codes_ds id index_date diag_code diag_date code_type      
-                lookback_period lookback_unit exclude_groups keep_pop_vars  
+                lookback_length lookback_unit exclude_groups keep_pop_vars  
                 keep_cci_vars print_notes verbose del;          
 
 %do i = 1 %to %sysfunc(countw(&opt_vars, %str( )));
@@ -295,16 +295,16 @@ run;
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, code_type = icd);
 
 
-/*** <lookback_period> ***/
+/*** <lookback_length> ***/
 
 /* check error if not non-negative integer input */
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = -1);
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = 1.9);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = -1);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = 1.9);
 
 /* check no error if non-negative integer input */
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = 0);
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = 4);
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = 01);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = 0);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = 4);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = 01);
 
 
 /*** <lookback_unit> ***/
@@ -519,7 +519,7 @@ run;
   diag_ds = diag,
   out_ds = test, 
   keep_cci_vars = y,
-  lookback_period = 1,
+  lookback_length = 1,
   lookback_unit = year
 );
 
@@ -528,7 +528,7 @@ run;
   diag_ds = diag,
   out_ds = test, 
   keep_cci_vars = y,
-  lookback_period = 1,
+  lookback_length = 1,
   lookback_unit = month
 );
 
@@ -537,7 +537,7 @@ run;
   diag_ds = diag,
   out_ds = test, 
   keep_cci_vars = y,
-  lookback_period = 1,
+  lookback_length = 1,
   lookback_unit = week
 );
 
@@ -546,7 +546,7 @@ run;
   diag_ds = diag,
   out_ds = test, 
   keep_cci_vars = y,
-  lookback_period = 1,
+  lookback_length = 1,
   lookback_unit = day
 );
 

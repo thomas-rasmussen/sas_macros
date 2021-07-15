@@ -10,16 +10,18 @@ Calculates the Charlson Comorbidity Index(CCI).
 
 **Version 0.1.0**
 
-Overhaul of entire macro
-
-**Version 0.0.1**
-
-First version of macro, based on old syntax.
+Overhaul of entire macro. 
 
 - Specified <index_date> and <diag_date> variables are now tested explitcly to make sure they have a recognized
   date format. The documentation have been made more clear about this requirement as well (issue #39)
   
 - All specified variables are now case-insensitive (issue #39)
+
+- The <lookback_period> parameter has been renamed <lookback_length>.
+
+**Version 0.0.1**
+
+First version of macro, based on old syntax.
 
 
 ### calculate_sd

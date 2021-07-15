@@ -79,9 +79,9 @@ true mixture of ICD-8 and ICD-10 codes, this can be specified by setting
 diag dataset, we also need to set "diag_code = diag_code_icd" to use the 
 correct variable in the diag data. 
 3) In many cases, the lookback period is set to a fixed period, which we can 
-specify by using the lookback_period and lookback_unit parameters. Here we 
+specify by using the lookback_length and lookback_unit parameters. Here we 
 choose to use a 6 month lookback period which we can specify using 
-"lookback_period = 6" and "lookback_unit = month".
+"lookback_length = 6" and "lookback_unit = month".
 4) In some cases we don't want to include auxiliary variables from the 
 <pop_ds> input datatset. We can achieve that by specifying "keep_pop_vars = n". 
 5) It is sometime convenient to have access to the individual disease groups 
@@ -99,7 +99,7 @@ macro. */
   out_ds = example_parms,
   diag_code = diag_code_icd,
   code_type = icd,
-  lookback_period = 6,
+  lookback_length = 6,
   lookback_unit = month,
   exclude_groups = 18 19,
   keep_pop_vars = n,
