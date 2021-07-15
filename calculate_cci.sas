@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.0.1
+VERSION:    0.1.0
 ********************************************************************************
 DESCRIPTION:
 Calculates the Charlson Comorbidity Index(CCI).

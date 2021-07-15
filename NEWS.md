@@ -8,6 +8,10 @@ First version of empirical_cdf macro that calculates the empirical cumulative di
 
 Calculates the Charlson Comorbidity Index(CCI).
 
+**Version 0.1.0**
+
+Overhaul of entire macro
+
 **Version 0.0.1**
 
 First version of macro, based on old syntax.
