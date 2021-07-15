@@ -16,6 +16,11 @@ Overhaul of entire macro
 
 First version of macro, based on old syntax.
 
+- Specified <index_date> and <diag_date> variables are now tested explitcly to make sure they have a recognized
+  date format. The documentation have been made more clear about this requirement as well (issue #39)
+  
+- All specified variables are now case-insensitive (issue #39)
+
 
 ### calculate_sd
 

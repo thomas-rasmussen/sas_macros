@@ -36,7 +36,8 @@ id:               Name of id variable in <pop_ds> and <diag_ds>.
                   Default is id = id.
 index_date:       Name of variable with index dates in <pop_ds>. The CCI is 
                   calculated with respect to this date. Must be a numeric
-                  variable.
+                  variable with a recognized date format, eg DATEw. or
+                  YYMMDDw.. See code for full list of recognized formats.
                   Default is index_date = index_date.
 diag_code:        Name of variable with diagnosis codes in <diag_ds>. Note that
                   the variable is expected to hold both ICD-8 and ICD-10 codes,
@@ -45,7 +46,8 @@ diag_code:        Name of variable with diagnosis codes in <diag_ds>. Note that
                   Must be a character variable.
                   Default is diag_code = diag_code.
 diag_date:        Name of variable with diagnosis dates. Must be a numeric
-                  variable.
+                  variable with a recognized date format, eg DATEw. or 
+                  YYMMDDw.. See code for full list of recognized formats.
                   Default is diag_date = diag_date.
 code_type:        Type of codes included in <diag_code>. It is assumed that
                   the macro is used on data from the Danish National Patient
@@ -334,48 +336,6 @@ input data. */
   %end;
 %end; /*End of i-loop */
 
-/* index_date: check numeric variable */
-proc contents data = &pop_ds(obs = 0) noprint out = __cc_pop_info1;
-run;
-
-%local type;
-data _null_;
-  set __cc_pop_info1;
-  if name = "&index_date" then call symput("type", compress(put(type, 1.)));
-run;
-  
-%if &type = 2 %then %do;
-  %put ERROR: <index_date> variable "&index_date" in dataset "&pop_ds" must be a numeric variable!;
-  %goto end_of_macro;
-%end;
-
-proc contents data = &diag_ds(obs = 0) noprint out = __cc_diag_info1;
-run;
-
-/* diag_code: check character variable */
-%local type;
-data _null_;
-  set __cc_diag_info1;
-  if name = "&diag_code" then call symput("type", compress(put(type, 1.)));
-run;
-
-%if &type = 1 %then %do;
-  %put ERROR: <diag_code> variable "&diag_code" in dataset "&diag_ds" must be a character variable!;
-  %goto end_of_macro;
-%end;
-
-/* diag_date: check numeric variable */
-%local type;
-data _null_;
-  set __cc_diag_info1;
-  if name = "&diag_date" then call symput("type", compress(put(type, 1.)));
-run;
-  
-%if &type = 2 %then %do;
-  %put ERROR: <diag_date> variable "&diag_date" in dataset "&diag_ds" must be a numeric variable!;
-  %goto end_of_macro;
-%end;
-
 /* code_type: check parameter has valid value. */
 %if %eval(&code_type in icd sks) = 0 %then %do;
   %put ERROR: <code_type> does not have a valid value!;
@@ -620,13 +580,12 @@ MODIFY CODES
   %end;
 %end;
 
-
 /*******************************************************************************
-PROCESS INPUT DATA
+LOAD INPUT DATA
 *******************************************************************************/
 
 %if &verbose = y %then %do;
-  %put calculate_cci: *** Process input data ***;
+  %put calculate_cci: *** Load input data ***;
 %end;
 
 /* Load input population and make a unique observation id */
@@ -638,15 +597,93 @@ data __cc_pop1;
   %end;
 run;
 
-/* Load and clean diagnosis data: we only need diagnosis code 
-information on the "group" level, not for each individual code. */
 proc sql;
   create table __cc_diag1 as
     select &id, &diag_date, &diag_code
     from &diag_ds
-    where &id in (select &id from &pop_ds);
+    where &id in (select &id from __cc_pop1);
 quit;
 
+
+
+/*******************************************************************************
+INPUT DATA CHECKS
+*******************************************************************************/
+
+%if &verbose = y %then %do;
+  %put calculate_cci: *** Input data checks ***;
+%end;
+
+/* List of recognized date formats. */
+%local date_formats;
+%let date_formats = 
+  "DATE" "E8601DA" "YYMMDD"
+  "DDMMYY" "DDMMYYB" "DDMMYYC" "DDMMYYD" "DDMMYYN" "DDMMYYP" "DDMMYYS" 
+  "EURDFDE" "EURDFWDX" "EURDFWKX" "MINGUO" "MMDDYY" "MMDDYYB" 
+  "MMDDYYC" "MMDDYYD" "MMDDYYN" "MMDDYYP" "MMDDYYS"
+;
+
+proc contents data = __cc_pop1(obs = 0) noprint out = __cc_pop_ds_info1;
+run;
+
+proc contents data = __cc_diag1(obs = 0) noprint out = __cc_diag_ds_info1;
+run;
+
+%local __fail_index_date_is_num __fail_index_date_is_date __fail_index_date_format;
+data __cc_pop_ds_info2;
+  set __cc_pop_ds_info1;
+  where lowcase(name) = lowcase("&index_date");
+  call symput("__fail_index_date_is_num", put((type = 1), 1.));
+  call symput("__fail_index_date_is_date", put((upcase(format) in (%upcase(&date_formats))), 1.));
+  call symput("__fail_index_date_format", format);
+run;
+
+%local __fail_diag_date_is_num __fail_diag_date_is_date __fail_diag_date_format;
+data __cc_diag_ds_info2;
+  set __cc_diag_ds_info1;
+  where lowcase(name) = lowcase("&diag_date");
+  call symput("__fail_diag_date_is_num", put((type = 1), 1.));
+  call symput("__fail_diag_date_is_date", put((upcase(format) in (%upcase(&date_formats))), 1.));
+  call symput("__fail_diag_date_format", format);
+run;
+
+%if &__fail_index_date_is_num = 0 %then %do;
+  %put ERROR: Variable "&index_date" is not numeric;
+  %goto end_of_macro;
+%end;
+
+%if &__fail_index_date_is_date = 0 %then %do;
+  %put ERROR: Variable "&index_date" has format &__fail_index_date_format..;
+  %put ERROR: This format is not recognized as a date format by the macro.;
+  %put ERROR: If the variable IS a date variable, use another date format;
+  %put ERROR: recognized by the macro (eg DATEw.);
+  %goto end_of_macro;
+%end;
+
+%if &__fail_diag_date_is_num = 0 %then %do;
+  %put ERROR: Variable "&diag_date" is not numeric;
+  %goto end_of_macro;
+%end;
+
+%if &__fail_diag_date_is_date = 0 %then %do;
+  %put ERROR: Variable "&diag_date" has format &__fail_diag_date_format..;
+  %put ERROR: This format is not recognized as a date format by the macro.;
+  %put ERROR: If the variable IS a date variable, use another date format;
+  %put ERROR: recognized by the macro (eg DATEw.);
+  %goto end_of_macro;
+%end;
+
+
+/*******************************************************************************
+PROCESS INPUT DATA
+*******************************************************************************/
+
+%if &verbose = y %then %do;
+  %put calculate_cci: *** Process input data ***;
+%end;
+
+/* Clean diagnosis data: we only need diagnosis code 
+information on the "group" level, not for each individual code. */
 data __cc_diag2;
   set __cc_diag1;
   %do i = 1 %to 19;

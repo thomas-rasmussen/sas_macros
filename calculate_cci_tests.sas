@@ -122,6 +122,9 @@ run;
 /* Check error if variable does not exist. */
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, id = abc);
 
+/* Check that variable specification is case-insensitive */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, id = ID);
+
 /* Check error if id variable missing from only one of the input datasets */
 data tmp;
   set pop;
@@ -143,6 +146,7 @@ run;
 /* Check non-default name works*/
 data tmp;
   set pop;
+  format index_date1 yymmdd10.;
   index_date1 = index_date;
 run;
 %calculate_cci(
@@ -173,6 +177,20 @@ run;
   out_ds = test,
   index_date = index_date index_date_chr
 );
+
+/* Check variable name is case-insensitive */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, index_date = INDEX_DATE);
+
+/* Check that numeric variable that is not a date variable triggers an error. */
+data tmp;
+  set pop;
+  format index_date_dt datetime20.;
+  index_date_no_fmt = index_date;
+  index_date_dt = dhms(datepart(index_date), 0, 0, 0);
+run;
+
+%calculate_cci(pop_ds = tmp, diag_ds = diag, out_ds = test, index_date = index_date_no_fmt);
+%calculate_cci(pop_ds = tmp, diag_ds = diag, out_ds = test, index_date = index_date_dt);
 
 
 /*** <diag_code> ***/
@@ -211,6 +229,9 @@ run;
   diag_code = diag_code diag_code
 );
 
+/* Check variable name is case-insensitive */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, diag_code = DIAG_CODE);
+
 
 /*** <diag_date> ***/
 
@@ -247,6 +268,21 @@ run;
   out_ds = test,
   diag_date = diag_date diag_date
 );
+
+/* Check variable name is case-insensitive */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, diag_date = DIAG_DATE);
+
+/* Check that numeric variable that is not a date variable triggers an error. */
+data tmp;
+  set diag;
+  format diag_date_dt datetime20.;
+  diag_date_no_fmt = diag_date;
+  diag_date_dt = dhms(datepart(diag_date), 0, 0, 0);
+run;
+
+%calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test, diag_date = diag_date_no_fmt);
+%calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test, diag_date = diag_date_dt);
+
 
 
 /*** <code_type> ***/
