@@ -19,6 +19,9 @@ Overhaul of entire macro.
 
 - The <lookback_period> parameter has been renamed <lookback_length>.
 
+- The <lookback_type> parameter has been removed. The macro now automatically determines if <diag_code> contains
+  ICD-10 or SKS (ICD-10 with "D" prefix) codes.
+
 **Version 0.0.1**
 
 First version of macro, based on old syntax.

@@ -200,6 +200,7 @@ data tmp;
   set diag;
   diag_code1 = diag_code;
 run;
+
 %calculate_cci(
   pop_ds = pop,
   diag_ds = tmp,
@@ -238,8 +239,10 @@ run;
 /* Check non-default name works*/
 data tmp;
   set diag;
+  format  diag_date1 yymmdd10.;
   diag_date1 = diag_date;
 run;
+
 %calculate_cci(
   pop_ds = pop,
   diag_ds = tmp,
@@ -282,17 +285,6 @@ run;
 
 %calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test, diag_date = diag_date_no_fmt);
 %calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test, diag_date = diag_date_dt);
-
-
-
-/*** <code_type> ***/
-
-/* Check invalid value triggers error */
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, code_type = abc);
-
-/* Check valid values work */
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, code_type = sks);
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, code_type = icd);
 
 
 /*** <lookback_length> ***/
@@ -555,8 +547,8 @@ run;
 PERFORMANCE
 *******************************************************************************/
 
-%let n_id = 10**5;
-%let n_diag = 100;
+%let n_id = 10**6;
+%let n_diag = 10;
 data pop;
   format id 8. index_date yymmdd10.;
   call streaminit(1);
