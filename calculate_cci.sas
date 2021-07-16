@@ -3,17 +3,31 @@ AUTHOR:     Thomas Bøjer Rasmussen
 VERSION:    0.1.0
 ********************************************************************************
 DESCRIPTION:
-Calculates the Charlson Comorbidity Index(CCI).
+Calculates the Charlson Comorbidity Index (CCI).
 
 DETAILS:
-The codes used to define the 19 different disease groups included in the CCI
-can be found in the "CODES" section of the macro. Note that all subcategories 
-of all specified codes are also included.
+Implementation of the CCI for use with (Danish) administrative registry data,
+using ICD-8 and ICD-10 diagnosis codes. In Danish registries, diagnosis codes
+are often coded as SKS codes, which are ICD-10 codes with a "D" prefix. The macro
+will automatically handle such codes if they are present in the specified
+diagnosis data. 
 
-The CCI is calculated for each observation in the input population dataset,
-even if observations have the same id and index date. This is convenient
-if eg the input population contains a multiple of subpopulations where the 
-same person is included in more than one subpopulation.
+If a person has both mild and moderate to severe liver disease at the index date,
+only the severe liver disease will be included in the CCI. The same is the case
+if a person has both diabetes with and without end-organ damage (only diabetes
+with end-organ damage is included), and if a person has both non-metastatic and 
+metastatic solid tumours (only metastatic solid tumour is included).
+
+This macro was originally inspired by a similar macro by Anders Hammerich Riis
+at the Department of Clinical Epidemiology, Aarhus University Hospital.
+
+
+REFERENCES:
+Mary E. Charlson et al
+A new method of classifying prognostic comorbidity in longitudinal studies: 
+Development and validation
+https://doi.org/10.1016/0021-9681(87)90171-8
+
 
 Accompanying examples and tests, version notes etc. can be found at:
 https://github.com/thomas-rasmussen/sas_macros
@@ -27,7 +41,7 @@ diag_ds:          (libname.)member-name of input dataset with diagnosis data.
                   The dataset must contain an "id", "diagnosis code" and 
                   "diagnosis date" variable. See <id>, <diag_code> 
                   and  <diag_date>.
-out_ds:           Name of output dataset.
+out_ds:           Name of output dataset, ie <pop_ds> with an added CCI variable.
 *** OPTIONAL ***
 codes_ds:         Name of input dataset with disease group definitions that 
                   will overwrite the default codes used in the macro. 

@@ -21,6 +21,9 @@ Overhaul of entire macro.
 
 - The <lookback_type> parameter has been removed. The macro now automatically determines if <diag_code> contains
   ICD-10 or SKS (ICD-10 with "D" prefix) codes.
+  
+- Documentation and references have been improved. It is now more clear how this implementation corresponds to the 
+  original definition of the comorbidity score by Charlson et al.
 
 **Version 0.0.1**
 
