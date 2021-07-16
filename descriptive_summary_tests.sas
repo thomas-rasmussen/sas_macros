@@ -186,6 +186,14 @@ correctly specified. */
 %descriptive_summary(in_ds = __data1, out_ds = __out1, var_list = bin_var, strata = by_char);
 %descriptive_summary(in_ds = __data1, out_ds = __out1, var_list = bin_var, strata = strata_num, weight = weight_num);
 
+/* test that a variable called "case" can be used in strata. */
+data __data1_case;
+  set __data1;
+  case = strata_num;
+run;
+
+%descriptive_summary(in_ds = __data1_case, out_ds = __out1_case, var_list = bin_var, strata = case);
+
 
 
 /*** Test "where" macro parameter ***/

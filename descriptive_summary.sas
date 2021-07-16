@@ -534,10 +534,15 @@ LOAD AND RESTRICT INPUT DATA
 *******************************************************************************/
 %local strata_nmiss weight_nmiss weight_min;
 
-data __ds_data1;
+/* To avoid problem with proc sql when strata = case, we rename the strata
+variable here, and restore the name in the end. See issue #40.*/
+data __ds_data1(rename = (&strata = __strata_tmp));
   set &in_ds;
-  where &where;;
+  where &where;
 run;
+%local strata_ori;
+%let strata_ori = &strata;
+%let strata = __strata_tmp;
 
 %if &syserr ne 0 %then %do;
   %put ERROR- The specified "where" condition:;
@@ -1385,7 +1390,7 @@ proc sql noprint;
     from __ds_data11;
 quit;
 
-data &out_ds;
+data &out_ds(rename = (__strata_tmp = &strata_ori));;
   /* Reorder columns so that "by" and "strata" variables are the left-most 
   columns. */
   retain
