@@ -36,6 +36,14 @@ First version of macro, based on old syntax.
 
 First version of calculate_sd macro that calculates standardized differences (SD) of variables between two groups.
 
+### descriptive_summary
+
+Produces a descriptive summary, a so-called "table 1", of variables in a dataset. This macro is a renamed version
+of the deprecated pt_char macro.
+
+**Version 0.1.0**
+
+
 ### hash_match
 
 Matching using a hash-table merge approach
@@ -143,6 +151,8 @@ Efficient propensity score pair matching using a hash-table merge.
 
 
 ### pt_char
+
+MACRO IS DEPRECATED. Use the descriptive_summary macro instead!
 
 Produces a so-called "table 1" with aggregated patient characteristics
 
