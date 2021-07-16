@@ -50,6 +50,8 @@ Matching using a hash-table merge approach
 
 **Version 0.3.4**
 
+- Fixed issue with variables being case-sensitive in some cases. (#37)
+
 **Version 0.3.3**
 
 - Hotfix of edge-case bug introduced in version 0.3.2

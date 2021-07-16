@@ -647,7 +647,7 @@ options nonotes;
       into :&i_var._type, :&i_var._length, :&i_var._format
       from sashelp.vcolumn
       where libname = "WORK" and memname = "__HM_DATA3"
-        and name = "&i_var";
+        and lowcase(name) = lowcase("&i_var");
   quit;
   %let &i_var._type = %sysfunc(compress(&&&i_var._type));
   %let &i_var._length = %sysfunc(compress(&&&i_var._length));
