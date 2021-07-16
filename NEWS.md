@@ -48,6 +48,8 @@ of the deprecated pt_char macro.
 
 Matching using a hash-table merge approach
 
+**Version 0.3.4**
+
 **Version 0.3.3**
 
 - Hotfix of edge-case bug introduced in version 0.3.2

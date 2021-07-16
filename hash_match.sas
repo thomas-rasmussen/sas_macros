@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.3.3
+VERSION:    0.3.4
 ********************************************************************************
 DESCRIPTION:
 Matching using a hash-table merge approach. The input dataset is expected to be 
