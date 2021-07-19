@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.1.0
+VERSION:    0.1.1
 ********************************************************************************
 DESCRIPTION:
 Calculates standardized differences (SD) of variables between two groups.

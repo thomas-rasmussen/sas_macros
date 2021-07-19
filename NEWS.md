@@ -32,6 +32,8 @@ First version of macro, based on old syntax.
 
 ### calculate_sd
 
+**Version 0.1.1**
+
 **Version 0.1.0**
 
 First version of calculate_sd macro that calculates standardized differences (SD) of variables between two groups.
