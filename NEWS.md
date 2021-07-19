@@ -34,6 +34,9 @@ First version of macro, based on old syntax.
 
 **Version 0.1.1**
 
+- Changed how missing data is intepreted for numeric variables. Numeric variables with missing values
+  are now treated as categorical variables by default.
+
 **Version 0.1.0**
 
 First version of calculate_sd macro that calculates standardized differences (SD) of variables between two groups.

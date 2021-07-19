@@ -374,13 +374,24 @@ data dat;
   drop i;
 run;
 
-/* Check that missing values are treated as a separate category
-for categorical variables. */
+/* Check that any missing values results in variables being assumed to be 
+categorical */
 %calculate_sd(
   in_ds       = dat, 
   out_ds      = out, 
   group_var   = group, 
   var         = bin_var_miss cont_var_miss cat_var_miss cat_var_char_miss
+);
+
+
+/* Check that bin_var_miss cont_var_miss can be manually specified to be 
+binary/continuous, resulting in missing data being excluded from calculations
+(without changing the results for the other variables). */
+%calculate_sd(
+  in_ds       = dat, 
+  out_ds      = out1, 
+  group_var   = group, 
+  var         = bin_var_miss/d cont_var_miss/cont cat_var_miss cat_var_char_miss
 );
 
 
