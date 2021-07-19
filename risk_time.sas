@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.1.0
+VERSION:    0.1.1
 ********************************************************************************
 DESCRIPTION:
 Stratification and summarization of risk-time. By default, risk-time
@@ -15,18 +15,10 @@ DETAILS:
 Splitting up risk-time, eg when estimating standardized rates, is straight 
 forward when the variables to standardize with respect to are treated as 
 constant, eg gender. But usually, stratification by age and/or calendar-year is 
-needed, and in this case of (monotonic) "time-dependent" variables the situation
+needed, and in this case of (monotonic) time-dependent variables, the situation
 is more complex. This macro facilitates splitting up and summarizing risk-time 
 in this case, and can also be used to stratify by additional (constant)
 variables.
-
-By convention, if follow-up starts and end on the same day, that will count
-as zero days of follow-up. Based on this convention, if follow-up ends on
-the day after start of follow-up, that will count as one day of follow-up,
-or alternatively as 1/365 or 1/366 years of follow-up depending on
-whether or not the follow-up is in a leap-year or not. Expanding on this, if
-a person starts follow-up on 2001-01-01, and ends follow-up on 2001-12-31, that
-is 364 days or 364/365 years of follow-up, not 365 days or 1 year.
 
 The macro was originally inspired by 
 Macaluso M. "Exact stratification of person-years". Epidemiology. 1992 
@@ -55,24 +47,38 @@ fu_end:         Name of variable in <in_ds> with the date of end of follow-up.
 risk_time_unit: Specify the unit the summarized risk-time is reported in.
                 - Years: risk_time_unit = years (default)
                 - Days: risk_time_unit = days
-stratify_year:  Stratify risk-time by calendar year?
-                - Yes: stratify_year = y (default)
-                - No: stratify_year = n
-stratify_age:   Stratify risk-time by age?
-                - Yes: stratify_age = y (default)
-                - No: stratify_age = n
+                If <stratify_by> includes _year_ (see below), then leap-years
+                are taken into account when calculating the risk-time in years. 
+                If not, then the risk_time in days is divided by 365.25.
 where:          Condition(s) used to to restrict the input dataset in a where-
                 statement. Use the %str function as a wrapper, eg 
                 where = %str(var = "value").
-stratify_by:    Space-separated list of additional variables to stratify by. 
-                Default is by = _null_, ie no by-variables.   
-max_ite:        Maximum number iterations allowed when splitting risk-time.
-                Used to ensure infinite loops will not occur. The maximum can
-                be interpreted as the maximum number of age-year stratas allowed 
-                when splitting risk-time. Default is equal to 200 * 200 = 40,000 
-                age-year stratas. If a person has follow-up time in more 
-                age-year stratas than this, this is thought to be an indication
-                of erroneous dates in the input dataset. Modify if needed.
+stratify_by:    Space-separated list of variables to stratify by. 
+                Default is stratify_by = _year_ _age_, meaning that
+                stratification is done with respect to calender year and
+                age. Additional (constant) variables can be added to the list,
+                and/or _year_/_age_ can be removed from the list. Finally,
+                stratify_by = _null_ can be used if no stratification is needed
+                and we just want to summarize all person-time.
+max_ite:        Maximum number of iterations allowed when splitting risk-time
+                according to time-dependent variables.
+                Used to ensure infinite loops will not occur. Default value
+                is max_ite = _auto_, meaning that max_ite is automatically
+                set to a reasonable value depending on what variables are
+                specified in <stratify_by>:
+                - <stratify_by> includes both _year_ and _age_: max_ite = 40000
+                - <stratify_by> includes _year_ or _age_: max_ite = 200
+                - <stratify_by> is empty or only includes constant variables:
+                  max_ite = 1.
+                The maximum can be interpreted as the maximum number of 
+                stratas allowed when splitting risk-time. for example if
+                we are stratifying with respect to both calender year and age
+                and a person had 200 * 200 = 40,000 age/year stratas this would
+                be an indication of erroneous dates in the input dataset, since
+                we would not expect a person to live 200 years. Likewise, if
+                no time-dependent stratification is to be done, we do not need
+                to split up the person-time at all.
+                If needed, max_ite can also be specified as an integer value.
 print_notes:    Print notes in log?
                 - Yes: print_notes = y
                 - No:  print_notes = n (default)
@@ -91,18 +97,16 @@ del:            Delete intermediate datasets created by the macro:
   fu_start        = fu_start,
   fu_end          = fu_end,
   risk_time_unit  = years,
-  stratify_year   = y,
-  stratify_age    = y,
   where           = %str(),
-  stratify_by     = _null_,
-  max_ite         = 40000,
+  stratify_by     = _year_ _age_,
+  max_ite         = _auto_,
   print_notes     = n,
   verbose         = n,
   del             = y
 ) / minoperator mindelimiter = ' ';
 
 
-%put risk_time: start execution;
+%put risk_time: start execution (%sysfunc(compress(%sysfunc(datetime(), datetime32.))));
 
 /* Find value of notes option, save it, then disable notes */
 %local opt_notes;
@@ -131,7 +135,7 @@ INPUT PARAMETER CHECKS
 %end;
 
 %if &verbose = y %then %do;
-  %put stratify_person_time: *** Input parameter checks ***;
+  %put risk_time: *** Input parameter checks ***;
 %end;
 
 /* print_notes: check parameter not empty. */
@@ -157,8 +161,7 @@ INPUT PARAMETER CHECKS
 /* Check remaining macro parameters (except where) not empty. */
 %local parms i i_parm;
 %let parms =  in_ds out_ds birth_date fu_start fu_end
-              risk_time_unit stratify_year stratify_age
-              stratify_by max_ite del;   
+              risk_time_unit stratify_by max_ite del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
   %if %bquote(&&&i_parm) = %then %do;
@@ -195,33 +198,78 @@ proc sql noprint;
   where name eqt "__";
 quit;
 
+/* stratify_by: check no duplicates. */
+%local i i_var j cnt;
+%do i = 1 %to %sysfunc(countw(&stratify_by, %str( )));
+  %let i_var = %scan(&stratify_by, &i, %str( ));
+  %let cnt = 0;
+  %do j = 1 %to %sysfunc(countw(&stratify_by, %str( )));
+    %if &i_var = %scan(&stratify_by, &j, %str( )) 
+      %then %let cnt = %eval(&cnt + 1);
+  %end;
+  %if %sysevalf(&cnt > 1) %then %do;
+    %put ERROR: Variable "&i_var" is included multiple times in <stratify_by>;
+    %goto end_of_macro;
+  %end;
+%end;
+
+/* Split &stratify_by into time-dependent (_year_ and _age_), and any additional 
+(constant) variables that have been specified. */
+%local stratify_by_td stratify_by_const i i_var;
+%do i = 1 %to %sysfunc(countw(&stratify_by, %str( )));
+  %let i_var = %scan(&stratify_by, &i, %str( ));
+  %if &i_var in _year_ _age_ %then %let stratify_by_td = &stratify_by_td &i_var;
+  %else %let stratify_by_const = &stratify_by_const &i_var;
+%end;
+
+%if &stratify_by_td = %then %let stratify_by_td = _null_;
+%if &stratify_by_const = %then %let stratify_by_const = _null_;
+
+%if &verbose = y %then %do;
+  %put - stratify_by_td:    &stratify_by_td;
+  %put - stratify_by_const: &stratify_by_const;
+%end;
+
 %local i i_var;
 %do i = 1 %to %sysfunc(countw(&in_ds_var_names, %str( )));
   %let i_var = %scan(&in_ds_var_names, &i, %str( ));
-  %put ERROR: Input dataset <in_ds> contains variable "&i_var".;
-  %put ERROR: All variables with a "__" prefix are protected variable names.;
-  %put ERROR: The input dataset is not allowed to contain any such variables;
-  %put ERROR: to ensure that the macro will work as intended.;
-  %goto end_of_macro; 
+  %if &i_var ne _null_ %then %do;
+    %put ERROR: Input dataset <in_ds> contains variable "&i_var".;
+    %put ERROR: All variables with a "__" prefix are protected variable names.;
+    %put ERROR: The input dataset is not allowed to contain any such variables;
+    %put ERROR: to ensure that the macro will work as intended.;
+    %goto end_of_macro; 
+  %end;
 %end;
 
 /* Check specified variable names are valid and exists in the input data. */
 %local var_list i i_var j j_var ds_id rc;
 %let var_list = birth_date fu_start fu_end;
-%if &stratify_by ne _null_ %then %let var_list = &var_list stratify_by;
+%if &stratify_by_const ne _null_ 
+  %then %let var_list = &var_list stratify_by_const;
 %do i = 1 %to %sysfunc(countw(&var_list, %str( )));
   %let i_var = %scan(&var_list, &i, %str( ));
   %do j = 1 %to %sysfunc(countw(&&&i_var, %str( )));
     %let j_var = %scan(&&&i_var, &j, %str( ));
     %if %sysfunc(nvalid(&j_var)) = 0 %then %do;
-      %put ERROR: Variable "&j_var" specified in <&i_var>;
+      %if &i_var = stratify_by_const %then %do;
+        %put ERROR: Variable "&j_var" specified in <stratify_by>;
+      %end;
+      %else %do;
+        %put ERROR: Variable "&j_var" specified in <&i_var>;
+      %end;
       %put ERROR: is not a valid SAS variable name!;
       %goto end_of_macro;
     %end;
     %let ds_id = %sysfunc(open(&in_ds));
     %if %sysfunc(varnum(&ds_id, &j_var)) = 0 %then %do;
       %let rc = %sysfunc(close(&ds_id));
-      %put ERROR: Variable "&j_var" specified in <&i_var> does;
+      %if &i_var = stratify_by_const %then %do;
+        %put ERROR: Variable "&j_var" specified in <stratify_by> does;
+      %end;
+      %else %do;
+        %put ERROR: Variable "&j_var" specified in <&i_var> does;
+      %end;
       %put ERROR: not exist in the input dataset "&in_ds"!;
       %goto end_of_macro; 
     %end;
@@ -257,47 +305,24 @@ quit;
   %goto end_of_macro;
 %end;
 
-/* stratify_year: check parameter has valid value. */          
-%if %eval(&stratify_year in y n) = 0 %then %do;
-  %put ERROR: <stratify_year> does not have a valid value!;
-  %put ERROR: Valid values are:;
-  %put ERROR: stratify_year = y (Yes);
-  %put ERROR: stratify_year = n (No);
-  %Put ERROR: Note that the parameter is case-sensitive.;
-  %goto end_of_macro;
-%end;
-
-/* stratify_age: check parameter has valid value. */          
-%if %eval(&stratify_age in y n) = 0 %then %do;
-  %put ERROR: <stratify_age> does not have a valid value!;
-  %put ERROR: Valid values are:;
-  %put ERROR: stratify_age = y (Yes);
-  %put ERROR: stratify_age = n (No);
-  %Put ERROR: Note that the parameter is case-sensitive.;
-  %goto end_of_macro;
-%end;
-
-/* stratify_by: check no duplicates. */
-%local i i_var j cnt;
-%do i = 1 %to %sysfunc(countw(&stratify_by, %str( )));
-  %let i_var = %scan(&stratify_by, &i, %str( ));
-  %let cnt = 0;
-  %do j = 1 %to %sysfunc(countw(&stratify_by, %str( )));
-    %if &i_var = %scan(&stratify_by, &j, %str( )) 
-      %then %let cnt = %eval(&cnt + 1);
-  %end;
-  %if %sysevalf(&cnt > 1) %then %do;
-    %put ERROR: Variable "&i_var" is included multiple times in <stratify_by>;
-    %goto end_of_macro;
-  %end;
-%end;
-
-/* max_ite: check that positive integer. 
-/* Regular expression: starts with a number 1-9, followed by, and ends with,
-one or more digits (so that 0 is not allowed, but eg 10 is). */
-%if %sysfunc(prxmatch('^[1-9]\d*$', &max_ite)) = 0 %then %do;
+/* max_ite: check that max_ite = _auto_ or positive integer. 
+/* Regular expression: is _auto_, or starts with a number 1-9, followed by, 
+and ends with, one or more digits (so that 0 is not allowed, but eg 10 is). */
+%if %sysfunc(prxmatch('^_auto_$|^[1-9]\d*$', &max_ite)) = 0 %then %do;
   %put ERROR: <max_ite> must be a positive integer!;
   %goto end_of_macro; 
+%end;
+/* max_ite: if max_ite = _auto_ change to appropriate value */
+%if &max_ite = _auto_ %then %do;
+  %if %sysfunc(countw(&stratify_by_td, %str( ))) = 2 
+    %then %let max_ite = 40000;
+  %else %if &stratify_by_td = _age_ or &stratify_by_td = _year_ 
+    %then %let max_ite = 200;
+  %else %let max_ite = 1;
+%end;
+
+%if &verbose = y %then %do;
+  %put - max_ite: &max_ite;
 %end;
 
 /* del: check parameter has valid value. */          
@@ -342,8 +367,6 @@ INPUT DATA CHECKS
   %put risk_time: *** Input data checks ***;
 %end;
 
-%if &stratify_by = _null_ %then %let stratify_by = __by_dummy;
-
 /* Restrict input data to relevant variables */
 data __rt_dat2;
   set __rt_dat1;
@@ -352,11 +375,10 @@ data __rt_dat2;
     &fu_end = __fu_end
     &birth_date = __birth_date
   ;
-  %if &stratify_by = __by_dummy %then %do;
-    __by_dummy = "dummy";
-    keep __by_dummy;
+  keep &birth_date &fu_start &fu_end;
+  %if &stratify_by_const ne _null_ %then %do;
+    keep &stratify_by_const;
   %end;
-  keep &stratify_by &birth_date &fu_start &fu_end;
 run;
 
 
@@ -378,13 +400,11 @@ run;
         __fail_start_is_num __fail_start_is_date __fail_start_format
         __fail_end_is_num   __fail_end_is_date   __fail_end_format;
 
-/* List of formats that is recognized as a (potential) data format by
-the macro. This is probably not the best approach, revise in the future
-is it becomes a common problem that users uses date formats that is not
-recognized. */
+/* List of recognized date formats. This is probably not the best approach.
+Revise in the future if it causes problems for users. */
 %local date_formats;
 %let date_formats = 
-  "" "DATE" "E8601DA"
+  "" "DATE" "E8601DA" "YYMMDD"
   "DDMMYY" "DDMMYYB" "DDMMYYC" "DDMMYYD" "DDMMYYN" "DDMMYYP" "DDMMYYS" 
   "DDMMYY" "EURDFDE" "EURDFWDX" "EURDFWKX" "MINGUO" "MMDDYY" "MMDDYYB" 
   "MMDDYYC" "MMDDYYD" "MMDDYYN" "MMDDYYP" "MMDDYYS"
@@ -539,32 +559,87 @@ STRATIFY PERSON TIME
 
 %local max_ite_reached;
 
-/* Calculate risk-time in each age/year strata for each person. Note that
-we do this, even if stratification by age and/or year is not wanted. */
+/* Calculate risk-time in each strata of monotonic time-dependent variables 
+specified in <stratify_by_td> for each person. */
 data __rt_strat1;
 	set __rt_dat2;
-	length __age __year 3;
+  format __current_date __next_event yymmdd10.;
+  %if _age_ in &stratify_by_td %then %do;
+    length _age_ 3.;
+    format __current_age __event_birthday yymmdd10.;
+  %end;
+  %if _year_ in &stratify_by_td %then %do;
+    length _year_ 3.;
+    format __current_year __event_new_year yymmdd10.;
+  %end;
 
   __cnt = 0;
   __stop = 0;
-  __age_start = floor(yrdif(__birth_date, __fu_start, "age"));
+
+  /* Initialize variables at start of risk-time period. */
   __current_date = __fu_start;
-  __current_age = __age_start;
-  __current_year = year(__fu_start);
+  %if _age_ in &stratify_by_td %then %do;
+    __current_age = floor(yrdif(__birth_date, __current_date, "age"));
+  %end;
+  %if _year_ in &stratify_by_td %then %do;
+    __current_year = year(__current_date);
+  %end;
 
   do while (__stop = 0);
     __cnt = __cnt + 1;
 
-    /* Find next event: new year, birthday or end of follow_up */
-    __event_year = mdy(1, 1, __current_year + 1);
-    __event_birthday = intnx("year", __birth_date, __current_age + 1, "same");
-    __next_event = min(__event_year, __event_birthday, __fu_end);
+    /* Find date of next event(s): new year, birthday or end of follow_up */
+    %if _year_ in &stratify_by_td %then %do;
+      __event_new_year = mdy(1, 1, __current_year + 1);
+    %end;
+    %if _age_ in &stratify_by_td %then %do;
+      __event_birthday = intnx("year", __birth_date, __current_age + 1, "same");
+    %end;
+    __next_event = min(
+      __fu_end
+      %if _year_ in &stratify_by_td %then %do;
+        , __event_new_year
+      %end;
+      %if _age_ in &stratify_by_td %then %do;
+        , __event_birthday
+      %end;
+    );
 
-    /* Calculate risk-time in strata and output */
-    __age = __current_age;
-    __year = __current_year;
-    __risk_time = __next_event - __current_date;
-    %if &risk_time_unit = years %then %do;
+    /* Find age and year value in risk-time strata */
+    %if _age_ in &stratify_by_td %then %do;
+      _age_ = __current_age;
+    %end;
+    %if _year_ in &stratify_by_td %then %do;
+      _year_ = __current_year;
+    %end;
+
+    /* If it is the last strata and it is only one day long, set length
+    risk time in strata to one day. */
+    if __current_date = __fu_end then do;
+      __risk_time = 1;
+      __stop = 1;
+    end;
+    /* Else, if the next event is end of follow-up, and only end of follow-up, 
+    then we are also on in the last strata of risk time. */
+    else if __next_event = __fu_end 
+      %if _age_ in &stratify_by_td %then %do;
+        and __next_event ne __event_birthday
+      %end;
+      %if _year_ in &stratify_by_td %then %do;
+        and __next_event ne __event_new_year 
+      %end;
+        then do;
+      __risk_time = __next_event - __current_date + 1;
+      __stop = 1;
+    end;
+    /* Else, the current strata is not the last strata, and we do not
+    include the __next_event day in risk-time, since it needs to be allocated
+    to the next strata. */
+    else do;
+      __risk_time = __next_event - __current_date;
+    end;
+
+    %if &risk_time_unit = years and _year_ in &stratify_by_td %then %do;
       /* Determine if the current year is a leap year to correctly
       find the number of days in the year. */
       if 
@@ -577,36 +652,43 @@ data __rt_strat1;
       else __year_length = 365;
       __risk_time = __risk_time / __year_length;
     %end;
+    %else %if &risk_time_unit = years %then %do;
+      __risk_time = __risk_time / 365.25;
+    %end;
+
     output;
 
-    /* Update variables */
+   /* Update variables */
     __current_date = __next_event;
-    if (__next_event = __event_year) 
-      then __current_year = __current_year + 1;
-    if (__next_event = __event_birthday) 
-      then __current_age = __current_age + 1;
+    %if _year_ in &stratify_by_td %then %do;
+      if (__next_event = __event_new_year) 
+        then __current_year = __current_year + 1;
+    %end;
+    %if _age_ in &stratify_by_td %then %do;
+      if (__next_event = __event_birthday) 
+        then __current_age = __current_age + 1;
+    %end;
 
-    /* if fu_end is next event then exit loop */
-    if __next_event = __fu_end then __stop = 1;
-
-    /* Use max counter iterator to protect against infinite loops. This
-    can also be interpreted as a maximum of age and calendar stratas we
-    allow / deem plausible. By default we assume that more than 
-    40,000 = 200 age stratas x 200 calendar years is an indication of
-    errors in the input data. */
+    /* Use max counter iterator to protect against infinite loops. */
     if __cnt > &max_ite then do;
       __stop = 1;
       call symput("max_ite_reached", "1");
-    END;
+    end;
   end; 
-  keep &stratify_by __birth_date __age __year __risk_time;
+
+  keep __risk_time;
+  %if &stratify_by ne _null_ %then %do;
+    keep &stratify_by;
+  %end;
 run;
 
 %if &max_ite_reached = 1 %then %do;
-  %let max_ite = %left(%qsysfunc(putn(&max_ite_reached, comma12.)));
-  %put ERROR: There is more than &max_ite age and calendar year strata for;
-  %put ERROR: one or more observations in the data. If this is intended;
-  %put ERROR: adjust the <max_ite> macro parameter.;
+  %let max_ite = %left(%qsysfunc(putn(&max_ite, comma12.)));
+  %put ERROR: There is more than &max_ite &stratify_by strata for;
+  %put ERROR: one or more observations in the data. If this is reasonable;
+  %put ERROR: adjust the <max_ite> macro parameter. Otherwise, this indicates;
+  %put ERROR: that one or more observation has erroneous data in the specified;
+  %put ERROR: variables.;
   %goto end_of_macro;
 %end;
 	
@@ -619,23 +701,9 @@ SUMMARIZE PERSON TIME
   %put risk_time: *** Summarize person time ***;
 %end;
 
-%if &stratify_by ne __by_dummy or &stratify_year = y or &stratify_age = y %then %do;
-  proc sort data = __rt_strat1;
-    by 
-      %if &stratify_by ne __by_dummy %then %do; &stratify_by %end; 
-      %if &stratify_year = y %then %do; __year %end;
-      %if &stratify_age = y %then %do; __age %end;
-    ;
-  run;
-%end;
-
-proc means data = __rt_strat1 noprint;
-  %if &stratify_by ne __by_dummy or &stratify_year = y or &stratify_age = y %then %do;
-    by 
-      %if &stratify_by ne __by_dummy %then %do; &stratify_by %end; 
-      %if &stratify_year = y %then %do; __year %end;
-      %if &stratify_age = y %then %do; __age %end;
-    ; 
+proc means data = __rt_strat1 nway noprint;
+  %if &stratify_by ne _null_%then %do;
+    class &stratify_by;
   %end;
   var __risk_time;
   output out = __rt_sum1(drop = _freq_ _type_)
@@ -661,12 +729,12 @@ data &out_ds;
   confusing if you had chosen to call the fu_start variable "age" in the input 
   data, but in the output data the variable would have another meaning. */
   %if (age in &birth_date &fu_start &fu_end &stratify_by) = 0 and
-      &stratify_age = y %then %do;
-    rename __age = age;
+      _age_ in &stratify_by %then %do;
+    rename _age_ = age;
   %end;
   %if (year in &birth_date &fu_start &fu_end &stratify_by) = 0 and
-      &stratify_year = y %then %do;
-    rename __year = year;
+      _year_ in &stratify_by %then %do;
+    rename _year_ = year;
   %end;
   %if (risk_time in &birth_date &fu_start &fu_end &stratify_by) = 0 %then %do;
     rename __risk_time = risk_time;
@@ -687,6 +755,6 @@ run;
 /* Restore value of notes option */
 options &opt_notes;
 
-%put risk_time: end execution;
+%put risk_time: end execution   (%sysfunc(compress(%sysfunc(datetime(), datetime32.))));
 
 %mend risk_time;

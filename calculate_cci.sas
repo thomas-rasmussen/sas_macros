@@ -1,19 +1,33 @@
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.0.1
+VERSION:    0.1.0
 ********************************************************************************
 DESCRIPTION:
-Calculates the Charlson Comorbidity Index(CCI).
+Calculates the Charlson Comorbidity Index (CCI).
 
 DETAILS:
-The codes used to define the 19 different disease groups included in the CCI
-can be found in the "CODES" section of the macro. Note that all subcategories 
-of all specified codes are also included.
+Implementation of the CCI for use with (Danish) administrative registry data,
+using ICD-8 and ICD-10 diagnosis codes. In Danish registries, diagnosis codes
+are often coded as SKS codes, which are ICD-10 codes with a "D" prefix. The macro
+will automatically handle such codes if they are present in the specified
+diagnosis data. 
 
-The CCI is calculated for each observation in the input population dataset,
-even if observations have the same id and index date. This is convenient
-if eg the input population contains a multiple of subpopulations where the 
-same person is included in more than one subpopulation.
+If a person has both mild and moderate to severe liver disease at the index date,
+only the severe liver disease will be included in the CCI. The same is the case
+if a person has both diabetes with and without end-organ damage (only diabetes
+with end-organ damage is included), and if a person has both non-metastatic and 
+metastatic solid tumours (only metastatic solid tumour is included).
+
+This macro was originally inspired by a similar macro by Anders Hammerich Riis
+at the Department of Clinical Epidemiology, Aarhus University Hospital.
+
+
+REFERENCES:
+Mary E. Charlson et al
+A new method of classifying prognostic comorbidity in longitudinal studies: 
+Development and validation
+https://doi.org/10.1016/0021-9681(87)90171-8
+
 
 Accompanying examples and tests, version notes etc. can be found at:
 https://github.com/thomas-rasmussen/sas_macros
@@ -27,7 +41,7 @@ diag_ds:          (libname.)member-name of input dataset with diagnosis data.
                   The dataset must contain an "id", "diagnosis code" and 
                   "diagnosis date" variable. See <id>, <diag_code> 
                   and  <diag_date>.
-out_ds:           Name of output dataset.
+out_ds:           Name of output dataset, ie <pop_ds> with an added CCI variable.
 *** OPTIONAL ***
 codes_ds:         Name of input dataset with disease group definitions that 
                   will overwrite the default codes used in the macro. 
@@ -36,33 +50,28 @@ id:               Name of id variable in <pop_ds> and <diag_ds>.
                   Default is id = id.
 index_date:       Name of variable with index dates in <pop_ds>. The CCI is 
                   calculated with respect to this date. Must be a numeric
-                  variable.
+                  variable with a recognized date format, eg DATEw. or
+                  YYMMDDw.. See code for full list of recognized formats.
                   Default is index_date = index_date.
 diag_code:        Name of variable with diagnosis codes in <diag_ds>. Note that
-                  the variable is expected to hold both ICD-8 and ICD-10 codes,
-                  and that by default, the ICD-10 codes are assumed to have 
-                  a "D" prefix. See <diag_type> for more information.
-                  Must be a character variable.
+                  the variable is expected to hold both ICD-8 and ICD-10/SKS
+                  (ICD-10 with "D" prefix used in some Danish registries)
+                  codes. The macro will automatically detect and handle SKS
+                  codes. Must be a character variable.
                   Default is diag_code = diag_code.
 diag_date:        Name of variable with diagnosis dates. Must be a numeric
-                  variable.
+                  variable with a recognized date format, eg DATEw. or 
+                  YYMMDDw.. See code for full list of recognized formats.
                   Default is diag_date = diag_date.
-code_type:        Type of codes included in <diag_code>. It is assumed that
-                  the macro is used on data from the Danish National Patient
-                  Registry, where ICD-10 codes have a "D" prefix. If not, 
-                  set code_type = icd to specify that <diag_code> contains true
-                  ICD-10 codes.
-                  Valid values:
-                  - code_type = sks (Default)
-                  - code_type = icd
-lookback_period:  Lookback period from <index_date> used to determine which
-                  diagnoses to include when calculating the CCI. By default
-                  lookback_period = 200 together with 
+lookback_length:  Lookback length from <index_date> defining the lookback
+                  period in which we look for diagnoses to include when 
+                  calculating the CCI. By default
+                  lookback_length = 200 together with 
                   lookback_unit = year, ie a lookback period of 200 years,
                   in practice meaning that we use all available data on
                   diagnoses before the index date to calculate the CCI. 
                   Must be a non-negative integer. 
-lookback_unit:    Unit of the lookback period specified in <lookback_period>.
+lookback_unit:    Unit of the lookback length specified in <lookback_length>.
                   - lookback_unit = year (Default)
                   - lookback_unit = month
                   - lookback_unit = week
@@ -101,8 +110,7 @@ del:              Delete intermediate datasets created by the macro?
   index_date      = index_date,
   diag_code       = diag_code,
   diag_date       = diag_date,
-  code_type       = sks,
-  lookback_period = 200,
+  lookback_length = 200,
   lookback_unit   = year,
   exclude_groups  = null,
   keep_pop_vars   = y,
@@ -166,7 +174,7 @@ INPUT PARAMETER CHECKS
 /* Check remaining macro parameters not empty. */
 %local parms i i_parm;
 %let parms =  pop_ds diag_ds out_ds codes_ds id index_date diag_code       
-              diag_date code_type lookback_period lookback_unit   
+              diag_date lookback_length lookback_unit   
               exclude_groups keep_pop_vars keep_cci_vars del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
@@ -334,61 +342,9 @@ input data. */
   %end;
 %end; /*End of i-loop */
 
-/* index_date: check numeric variable */
-proc contents data = &pop_ds(obs = 0) noprint out = __cc_pop_info1;
-run;
-
-%local type;
-data _null_;
-  set __cc_pop_info1;
-  if name = "&index_date" then call symput("type", compress(put(type, 1.)));
-run;
-  
-%if &type = 2 %then %do;
-  %put ERROR: <index_date> variable "&index_date" in dataset "&pop_ds" must be a numeric variable!;
-  %goto end_of_macro;
-%end;
-
-proc contents data = &diag_ds(obs = 0) noprint out = __cc_diag_info1;
-run;
-
-/* diag_code: check character variable */
-%local type;
-data _null_;
-  set __cc_diag_info1;
-  if name = "&diag_code" then call symput("type", compress(put(type, 1.)));
-run;
-
-%if &type = 1 %then %do;
-  %put ERROR: <diag_code> variable "&diag_code" in dataset "&diag_ds" must be a character variable!;
-  %goto end_of_macro;
-%end;
-
-/* diag_date: check numeric variable */
-%local type;
-data _null_;
-  set __cc_diag_info1;
-  if name = "&diag_date" then call symput("type", compress(put(type, 1.)));
-run;
-  
-%if &type = 2 %then %do;
-  %put ERROR: <diag_date> variable "&diag_date" in dataset "&diag_ds" must be a numeric variable!;
-  %goto end_of_macro;
-%end;
-
-/* code_type: check parameter has valid value. */
-%if %eval(&code_type in icd sks) = 0 %then %do;
-  %put ERROR: <code_type> does not have a valid value!;
-  %put ERROR: Valid values are:;
-  %put ERROR: code_type = sks (Default);
-  %put ERROR: code_type = icd;
-  %Put ERROR: Note that the parameter is case-sensitive.;
-  %goto end_of_macro;
-%end;
-
-/* lookback_period: check non-negative integer */
-%if %sysfunc(prxmatch('^\d*$', &lookback_period)) = 0 %then %do;
-  %put ERROR: <lookback_period> must be a a non negative integer!;
+/* lookback_length: check non-negative integer */
+%if %sysfunc(prxmatch('^\d*$', &lookback_length)) = 0 %then %do;
+  %put ERROR: <lookback_length> must be a a non negative integer!;
   %goto end_of_macro; 
 %end;
 
@@ -401,6 +357,21 @@ run;
   %put ERROR: - month;
   %put ERROR: - year (Default);
   %Put ERROR: Note that the parameter is case-sensitive.;
+  %goto end_of_macro;
+%end;
+
+/* diag_code: check character variable */
+proc contents data = &diag_ds(obs = 0) noprint out = __cc_diag_info1;
+run;
+
+%local type;
+data _null_;
+  set __cc_diag_info1;
+  if lowcase(name) = lowcase("&diag_code") then call symput("type", compress(put(type, 1.)));
+run;
+
+%if &type ne 2 %then %do;
+  %put ERROR: <diag_code> variable "&diag_code" in dataset "&diag_ds" must be a character variable!;
   %goto end_of_macro;
 %end;
 
@@ -587,10 +558,6 @@ MODIFY CODES
 %end;
 
 %do i = 1 %to 19;
-  /* Add prefix if code_type = sks*/
-  %if &code_type = sks %then %do;
-    %let cci_&i._icd10 = %sysfunc(prxchange(s/([\w\d]+)/D$1/, -1, %str(&&cci_&i._icd10)));
-  %end;
   /* Quote codes and insert dummy symbols */
   %let cci_&i._icd8 = %sysfunc(prxchange(s/([\w\d]+)/"$1"#/, -1, %str(&&cci_&i._icd8)));
   %let cci_&i._icd10 = %sysfunc(prxchange(s/([\w\d]+)/"$1"#/, -1, %str(&&cci_&i._icd10)));
@@ -603,11 +570,7 @@ MODIFY CODES
 %end;
 
 %if &verbose = y %then %do;
-  %put calculate_cci:   Codes searched for in "&diag_ds":;
-  %if &code_type = sks %then %do;
-    %put calculate_cci:   (Note that ICD-10 codes have a "D" prefix because code_type = sks);
-  %end;
-
+  %put calculate_cci:   Final code list:;
   %do i = 1 %to 19;
     %if &i < 10 %then %do;
       %put calculate_cci:   Group &i       - &&cci_&i._label;
@@ -620,13 +583,12 @@ MODIFY CODES
   %end;
 %end;
 
-
 /*******************************************************************************
-PROCESS INPUT DATA
+LOAD INPUT DATA
 *******************************************************************************/
 
 %if &verbose = y %then %do;
-  %put calculate_cci: *** Process input data ***;
+  %put calculate_cci: *** Load input data ***;
 %end;
 
 /* Load input population and make a unique observation id */
@@ -638,15 +600,169 @@ data __cc_pop1;
   %end;
 run;
 
-/* Load and clean diagnosis data: we only need diagnosis code 
-information on the "group" level, not for each individual code. */
 proc sql;
   create table __cc_diag1 as
     select &id, &diag_date, &diag_code
     from &diag_ds
-    where &id in (select &id from &pop_ds);
+    where &id in (select &id from __cc_pop1);
 quit;
 
+
+
+/*******************************************************************************
+INPUT DATA CHECKS
+*******************************************************************************/
+
+%if &verbose = y %then %do;
+  %put calculate_cci: *** Input data checks ***;
+%end;
+
+/*** Check index_date and diag_date are numeric variables with a
+recognized date format ***/
+
+/* List of recognized date formats. */
+%local date_formats;
+%let date_formats = 
+  "DATE" "E8601DA" "YYMMDD"
+  "DDMMYY" "DDMMYYB" "DDMMYYC" "DDMMYYD" "DDMMYYN" "DDMMYYP" "DDMMYYS" 
+  "EURDFDE" "EURDFWDX" "EURDFWKX" "MINGUO" "MMDDYY" "MMDDYYB" 
+  "MMDDYYC" "MMDDYYD" "MMDDYYN" "MMDDYYP" "MMDDYYS"
+;
+
+proc contents data = __cc_pop1(obs = 0) noprint out = __cc_pop_ds_info1;
+run;
+
+proc contents data = __cc_diag1(obs = 0) noprint out = __cc_diag_ds_info1;
+run;
+
+%local __fail_index_date_is_num __fail_index_date_is_date __fail_index_date_format;
+data __cc_pop_ds_info2;
+  set __cc_pop_ds_info1;
+  where lowcase(name) = lowcase("&index_date");
+  call symput("__fail_index_date_is_num", put((type = 1), 1.));
+  call symput("__fail_index_date_is_date", put((upcase(format) in (%upcase(&date_formats))), 1.));
+  call symput("__fail_index_date_format", format);
+run;
+
+%local __fail_diag_date_is_num __fail_diag_date_is_date __fail_diag_date_format;
+data __cc_diag_ds_info2;
+  set __cc_diag_ds_info1;
+  where lowcase(name) = lowcase("&diag_date");
+  call symput("__fail_diag_date_is_num", put((type = 1), 1.));
+  call symput("__fail_diag_date_is_date", put((upcase(format) in (%upcase(&date_formats))), 1.));
+  call symput("__fail_diag_date_format", format);
+run;
+
+%if &__fail_index_date_is_num = 0 %then %do;
+  %put ERROR: Variable "&index_date" is not numeric;
+  %goto end_of_macro;
+%end;
+
+%if &__fail_index_date_is_date = 0 %then %do;
+  %put ERROR: Variable "&index_date" has format &__fail_index_date_format..;
+  %put ERROR: This format is not recognized as a date format by the macro.;
+  %put ERROR: If the variable IS a date variable, use another date format;
+  %put ERROR: recognized by the macro (eg DATEw.);
+  %goto end_of_macro;
+%end;
+
+%if &__fail_diag_date_is_num = 0 %then %do;
+  %put ERROR: Variable "&diag_date" is not numeric;
+  %goto end_of_macro;
+%end;
+
+%if &__fail_diag_date_is_date = 0 %then %do;
+  %put ERROR: Variable "&diag_date" has format &__fail_diag_date_format..;
+  %put ERROR: This format is not recognized as a date format by the macro.;
+  %put ERROR: If the variable IS a date variable, use another date format;
+  %put ERROR: recognized by the macro (eg DATEw.);
+  %goto end_of_macro;
+%end;
+
+/*** Determine if ICD-10 or SKS codes are used in the data ***/
+
+/* Take small random sample of the diagnosis data. */
+%local n_diag;
+proc sql noprint;
+  select count(*) into: n_diag
+    from __cc_diag1;
+quit;
+
+proc surveyselect data = __cc_diag1 method = srs n = %sysfunc(min(1000, &n_diag))
+  out = __cc_codes1 noprint;
+run;
+
+data __cc_codes2;
+  set __cc_codes1;
+  format __code_type $7.;
+  if &diag_code = "" then __code_type = "empty";
+  else if prxmatch('/^D[a-z]\d*$/i', compress(&diag_code)) 
+    then __code_type = "sks";
+  else if prxmatch('/^[\d]+$/i', compress(&diag_code)) 
+    then __code_type = "icd8";
+  else if prxmatch('/^[a-z]\d*$/i', compress(&diag_code)) 
+    then __code_type = "icd10";
+  else __code_type = "unknown";
+  __dummy = 1;
+  keep __code_type __dummy;
+run;
+
+proc means data = __cc_codes2 nway noprint;
+  class __code_type;
+  output out = __cc_codes3 sum(__dummy) = n;
+run;
+
+%local __n_empty __n_sks __n_icd8 __n_icd10 __n_unknown;
+%let __n_empty = 0;
+%let __n_sks = 0;
+%let __n_icd8 = 0;
+%let __n_icd10 = 0;
+%let __n_unknown = 0;
+
+data _null_;
+  set __cc_codes3;
+  if __code_type = "empty" then call symput("__n_empty", put(n, comma12.));
+  else if __code_type = "sks" then call symput("__n_sks", put(n, comma12.));
+  else if __code_type = "icd8" then call symput("__n_icd8", put(n, comma12.));
+  else if __code_type = "icd10" then call symput("__n_icd10", put(n, comma12.));
+  else if __code_type = "unknown" then call symput("__n_unknown", put(n, comma12.));
+run;
+
+%if &verbose = y %then %do;
+  %put calculate_cci: Code types in sample of data:;
+  %put calculate_cci: - Empty string: %left(%bquote(&__n_empty));
+  %put calculate_cci: - SKS:          %left(%bquote(&__n_sks));
+  %put calculate_cci: - ICD-8:        %left(%bquote(&__n_icd8));
+  %put calculate_cci: - ICD-10:       %left(%bquote(&__n_icd10));
+  %put calculate_cci: - Unknown:      %left(%bquote(&__n_unknown));
+%end;
+
+%if &__n_unknown ne 0 %then %do;
+  %put ERROR: Variable "&diag_code" has values that;
+  %put ERROR: that could not be identified as an empty string, or an;
+  %put ERROR: ICD-8/ICD-10/SKS code.;
+  %goto end_of_macro;
+%end;
+
+/* Convert SKS codes to ICD-10. */
+%if &__n_sks ne 0 %then %do;
+  data __cc_diag1;
+    set __cc_diag1;
+    if prxmatch('/^D[a-z]/i', compress(&diag_code)) 
+      then &diag_code = substr(&diag_code, 2);
+  run;
+%end;
+
+/*******************************************************************************
+PROCESS INPUT DATA
+*******************************************************************************/
+
+%if &verbose = y %then %do;
+  %put calculate_cci: *** Process input data ***;
+%end;
+
+/* Clean diagnosis data: we only need diagnosis code 
+information on the "group" level, not for each individual code. */
 data __cc_diag2;
   set __cc_diag1;
   %do i = 1 %to 19;
@@ -716,7 +832,7 @@ data &out_ds;
   %do i = 1 %to 19;
     /* __tmp is the start date of the lookback period, ie the index date
     minus some number of days/weeks/months/years. */
-    __tmp = intnx("&lookback_unit", &index_date, -&lookback_period, "same");
+    __tmp = intnx("&lookback_unit", &index_date, -&lookback_length, "same");
     if __group = &i and __tmp <= &diag_date < &index_date
       then cci_&i = 1;
   %end;

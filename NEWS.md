@@ -8,6 +8,23 @@ First version of empirical_cdf macro that calculates the empirical cumulative di
 
 Calculates the Charlson Comorbidity Index(CCI).
 
+**Version 0.1.0**
+
+Overhaul of entire macro. 
+
+- Specified <index_date> and <diag_date> variables are now tested explitcly to make sure they have a recognized
+  date format. The documentation have been made more clear about this requirement as well (issue #39)
+  
+- All specified variables are now case-insensitive (issue #39)
+
+- The <lookback_period> parameter has been renamed <lookback_length>.
+
+- The <lookback_type> parameter has been removed. The macro now automatically determines if <diag_code> contains
+  ICD-10 or SKS (ICD-10 with "D" prefix) codes.
+  
+- Documentation and references have been improved. It is now more clear how this implementation corresponds to the 
+  original definition of the comorbidity score by Charlson et al.
+
 **Version 0.0.1**
 
 First version of macro, based on old syntax.
@@ -15,13 +32,30 @@ First version of macro, based on old syntax.
 
 ### calculate_sd
 
+**Version 0.1.1**
+
+- Changed how missing data is intepreted for numeric variables. Numeric variables with missing values
+  are now treated as categorical variables by default.
+
 **Version 0.1.0**
 
 First version of calculate_sd macro that calculates standardized differences (SD) of variables between two groups.
 
+### descriptive_summary
+
+Produces a descriptive summary, a so-called "table 1", of variables in a dataset. This macro is a renamed version
+of the deprecated pt_char macro.
+
+**Version 0.1.0**
+
+
 ### hash_match
 
 Matching using a hash-table merge approach
+
+**Version 0.3.4**
+
+- Fixed issue with variables being case-sensitive in some cases. (#37)
 
 **Version 0.3.3**
 
@@ -112,12 +146,22 @@ macro. See examples.
 
 Efficient propensity score pair matching using a hash-table merge.
 
+**Version 0.1.3**
+
+- It is now possible to specify the match ID variable name in the output using the match_id_name parameter.
+
+- Default values have been added to out_pf (_ps_match), group_var(group), and ps_var(ps) to facilitate use of macro.
+
+- A jitter_ps parameter has been added that can be used to control whether or not small amounts of random noise is added to the ps values. This is done by default to ensure that random matches are made in scenarios where there are multiple persons with the same ps. This is important if the ps only takes discrete values, but this can now be disabled if the user does not want this behavior.
+
 **Version 0.1.2**
 
 - Fixed bug causing matching without replacement (replace = n) to not work as intended.
 
 
 ### pt_char
+
+MACRO IS DEPRECATED. Use the descriptive_summary macro instead!
 
 Produces a so-called "table 1" with aggregated patient characteristics
 
@@ -154,6 +198,27 @@ Produces a so-called "table 1" with aggregated patient characteristics
   
 Stratification and summarization of risk-time
   
+
+**Version 0.1.1**
+
+- yymmddw. is now accepted as a valid date format.
+
+- Macro now prints the time at start and end of execution.
+
+- Changed how stratification variables are specified. The <stratify_year> and <stratify_age> 
+  have been removed, and <stratify_by> now has default value stratify_by = _year_ _age_, 
+  which specifies that the specified <birth_date>, <fu_start> and <fu_end> variables are used to
+  stratify by calender year and age. Additional (constant) variables can still be specified to
+  make additional stratifications. (issue #31)
+  
+- Macro is now considerably faster, especially when stratification is not done on both age and
+  calendar year. (issue #31)
+
+- Changed how days of risk-time is counted in (age/year) stratas. Before, if a person entered and exited the
+  strata on the same day, then this would count as zero days of risk-time. This has now been changed to count as 
+  one day of follow-up.
+   
+
 **Version 0.1.0**
 
 - Made complete overhaul of old macro and added it to this repository 

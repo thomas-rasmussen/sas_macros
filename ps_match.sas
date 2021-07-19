@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.1.2
+VERSION:    0.1.3
 ********************************************************************************
 DESCRIPTION:
 Propensity score (ps) pair matching using nearest neighbor matching 
@@ -20,67 +20,80 @@ studies.
 ********************************************************************************
 PARAMETERS:
 *** REQUIRED ***
-in_ds:        (libname.)member-name of input dataset with treated/exposed and 
-              untreated/unexposed patients.
-out_pf:       (libname.)member-name prefix of output datasets. The following
-              datasets are created by the macro:
-              - <out_pf>_matches: matched population. 
-              - <out_pf>_no_matches: information on patients for which 
-              no match could be found.
-              - <out_pf>_info: miscellaneous information and diagnostics of 
-              the matching procedure.
-group_var:    Grouping variable. Must be anumeric variable taking 0/1 values.
-              Matching is done for each observation with <group_var> = 1, usually
-              the treated/exposed patients.
-ps_var:       Name of ps variable. Must be a numeric variable where
-              0 < ps_var < 1 for all patients.
+in_ds:          (libname.)member-name of input dataset with treated/exposed and 
+                untreated/unexposed patients.
+group_var:      Grouping variable. Must be anumeric variable taking 0/1 values.
+                Matching is done for each observation with <group_var> = 1,
+                usually the treated/exposed patients.
+                Defaults to group_var = group to facilitate use of the macro.
+ps_var:         Name of ps variable. Must be a numeric variable where
+                0 < ps_var < 1 for all patients.
+                Defaults to ps_var = ps to facilitate use of the macro.
 *** OPTIONAL ***
-match_on:     Should matching be done on the ps or logit(ps)?
-              - ps: match_on = ps
-              - logit(ps): match_on = logit_ps (default)
-caliper:      Caliper width used in matching. By default (caliper = auto), the 
-              caliper is chosen as described in the details above. Otherwise,
-              a postive number can be specified to be used as a caliper (fixed
-              across by-variables).
-replace:      Match with or without replacement?
-              - With replacement: replace = y (default)
-              - Without replacement: replace = n.
-match_order:  In what order is matching to be done?
-              Random order: order = rand (default)
-              Data order: order = asis       
-where:        Condition(s) used to to restrict the input dataset in a where-
-              statement. Use the %str function as a wrapper, eg 
-              where = %str(var = "value").
-by:           Space-separated list of by-variables. Default is by = _null_,
-              ie no by-variables.    
-print_notes:  Print notes in log?
-              - Yes: print_notes = y
-              - No:  print_notes = n (default)
-verbose:      Print info on what is happening during macro execution
-              to the log?
-              - Yes: verbose = y
-              - No:  verbose = n (default)
-seed:         Seed used for random number generation. Default is seed = 0,
-              ie a random seed is used.        
-del:          Delete intermediate datasets created by the macro:
-              - Yes: del = y (default)
-              - no:  del = n            
+out_pf:         (libname.)member-name prefix of output datasets. The following
+                datasets are created by the macro:
+                - <out_pf>_matches: matched population. 
+                - <out_pf>_no_matches: information on patients for which 
+                no match could be found.
+                - <out_pf>_info: miscellaneous information and diagnostics of 
+                the matching procedure.
+                Default prefix is "_ps_match".
+match_on:       Should matching be done on the ps or logit(ps)?
+                - ps: match_on = ps
+                - logit(ps): match_on = logit_ps (default)
+caliper:        Caliper width used in matching. By default (caliper = auto), the 
+                caliper is chosen as described in the details above. Otherwise,
+                a postive number can be specified to be used as a caliper (fixed
+                across by-variables).
+replace:        Match with or without replacement?
+                - With replacement: replace = y (default)
+                - Without replacement: replace = n.
+match_order:    In what order is matching to be done?
+                Random order: order = rand (default)
+                Data order: order = asis       
+where:          Condition(s) used to to restrict the input dataset in a where-
+                statement. Use the %str function as a wrapper, eg 
+                where = %str(var = "value").
+by:             Space-separated list of by-variables. Default is by = _null_,
+                ie no by-variables.
+match_id_name:  Specify the name of the match id variable in the output.
+                Default name is "__match".
+jitter_ps:      Add a small amount of noise to ps's to ensure that random
+                matches are made in case multiple persons have the same ps.
+                This is particularly in important if the ps only takes discrete
+                values!
+                - Yes: jitter_ps = y (default)
+                - No:  jitter_ps = n
+print_notes:    Print notes in log?
+                - Yes: print_notes = y
+                - No:  print_notes = n (default)
+verbose:        Print info on what is happening during macro execution
+                to the log?
+                - Yes: verbose = y
+                - No:  verbose = n (default)
+seed:           Seed used for random number generation. Default is seed = 0,
+                ie a random seed is used.        
+del:            Delete intermediate datasets created by the macro:
+                - Yes: del = y (default)
+                - no:  del = n            
 ******************************************************************************/
 %macro ps_match(
-  in_ds       = ,
-  out_pf      = ,
-  group_var   = ,
-  ps_var      = ,
-  match_on    = logit_ps,
-  caliper     = auto,
-  replace     = y,
-  match_order = rand,
-  where       = %str(),
-  by          = _null_,
-  print_notes = n,
-  verbose     = n,
-  seed        = 0,
-  del         = y
+  in_ds         = ,
+  group_var     = group,
+  ps_var        = ps,
+  out_pf        = _ps_match,
+  match_on      = logit_ps,
+  caliper       = auto,
+  replace       = y,
+  match_order   = rand,
+  where         = %str(),
+  by            = _null_,
+  match_id_name = __match,
+  jitter_ps     = y,
+  print_notes   = n,
+  verbose       = n,
+  seed          = 0,
+  del           = y
 ) / minoperator mindelimiter = ' ';
 
 %put ps_match: start execution;
@@ -137,7 +150,7 @@ INPUT PARAMETER CHECKS
 /* Check remaining macro parameters (except where) not empty. */
 %local parms i i_parm;
 %let parms =  in_ds out_pf group_var ps_var match_on caliper replace 
-              match_order by seed del;   
+              match_order by match_id_name jitter_ps seed del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
   %if %bquote(&&&i_parm) = %then %do;
@@ -372,6 +385,42 @@ quit;
   %end;
 %end;
 
+/* match_id_name: check valid variable name input. */
+%if %sysfunc(nvalid(&match_id_name)) = 0 %then %do;
+  %put ERROR: <match_id_name> "&match_id_name" is not a valid SAS variable name!;
+  %goto end_of_macro;
+%end;
+
+/* match_id_name: check that variable name is not the same as one of the
+other variable names in the input dataset. */
+
+data __ps_all_in_ds_var_names;
+  set &in_ds.(obs = 0);
+run;
+
+%local all_in_ds_var_names;
+proc sql noprint;
+  select lower(name) into: all_in_ds_var_names separated by " "
+  from sashelp.vcolumn
+  where libname = "WORK" and memname = "__PS_IN_DS_VAR_NAMES";
+quit;
+
+%local i i_var;
+%do i = 1 %to %sysfunc(countw(&all_in_ds_var_names, %str( )));
+  %let i_var = %scan(&all_in_ds_var_names, &i, %str( ));
+  %if &i_var = &match_id_name %then %do;
+    %put ERROR: <match_id_name> "&match_id_name" already exists in;
+    %put ERROR: input dataset.;
+    %goto end_of_macro; 
+  %end;
+%end;
+
+/* jitter_ps: check parameter has valid value. */          
+%if %eval(&jitter_ps in n y) = 0 %then %do;
+  %put ERROR: <jitter_ps> does not have a valid value!;
+  %goto end_of_macro;
+%end;
+
 /* seed: check integer. */
 %if %sysfunc(prxmatch('^-*\d*$', &seed)) = 0 %then %do;
   %put ERROR: <seed> must be an integer!;
@@ -398,14 +447,17 @@ data __ps_dat1;
   set &in_ds;
   where &where;
   __id = _n_;
-  /* Add a very small number to the ps. This will ensure that if multiple
-  observations have the same ps value, a random match will be made among
-  all observations with the same ps. */
-  __ps = &ps_var + rand("uniform") * 10**(-10);
-  /* Make sure that the modified ps does not violate the 0 < ps < 1
-  requirement. */
-  __ps = min(1 - 10**(-10), __ps);
-  __ps = max(0 + 10**(-10), __ps);
+  __ps = ps;
+  %if &jitter_ps = y %then %do;
+    /* Add a very small number to the ps. This will ensure that if multiple
+    observations have the same ps value, a random match will be made among
+    all observations with the same ps. */
+    __ps = &ps_var + rand("uniform") * 10**(-10);
+    /* Make sure that the modified ps does not violate the 0 < ps < 1
+    requirement. */
+    __ps = min(1 - 10**(-10), __ps);
+    __ps = max(0 + 10**(-10), __ps);
+  %end;
   /* If matching is done on logit(ps), transform the __ps variable. */
   %if &match_on = logit_ps %then %do;
     __ps = log(__ps / (1 - __ps));
@@ -815,6 +867,7 @@ data &out_pf._matches;
   %if &by = __by_dummy %then %do;
     drop __by_dummy;
   %end;
+  rename __match = &match_id_name;
   drop __id __ps __rand_order;
 run;
 

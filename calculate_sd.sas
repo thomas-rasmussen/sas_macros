@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.1.0
+VERSION:    0.1.1
 ********************************************************************************
 DESCRIPTION:
 Calculates standardized differences (SD) of variables between two groups.
@@ -453,8 +453,11 @@ data __sd_type4;
       
       /* If character, assume categorical variable */
       if __&i._vt = "C" then __&i._type = "cat";
-      /* Else, if the variable only takes the values zero and/or one (besides 
-      missing values) then we will assume it's dichotomous. */
+      /* Else, if the variabls has missing values, we will assume it is
+      a categorical variable. */
+      else if __&i._nmiss > 0 then __&i._type = "cat";
+      /* Else, if the variable only takes the values zero and/or one then we 
+      will assume it's dichotomous. */
       else if 1 <= __&i._nvalues <= 2 and __&i._min in ("0" "1") 
         and __&i._max in ("0" "1") then __&i._type = "d";  
       /* Else, if the number of distinct values is <= 20, assume 

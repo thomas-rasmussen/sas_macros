@@ -83,6 +83,8 @@ run;
 /* Is numeric */
 %hash_match(in_ds = __data1, out_pf = __out1, match_date = index_char);
 
+/* Check that match_date is case-insensitive */
+%hash_match(in_ds = __data1, out_pf = __out1, match_date = INDEX_num);
 
 /*** match_exact tests ***/
 
@@ -132,6 +134,14 @@ run;
   match_exact = var_num1 var_num1
 );
 
+/* Check variables case-insensitive */
+%hash_match(
+  in_ds       = __data1, 
+  out_pf      = __out1, 
+  match_date  = index_num,
+  match_exact = VAR_num1 var_CHAR2
+);
+
 /*** match_inexact tests ***/
 
 /* Check correct use works */
@@ -156,6 +166,14 @@ run;
   out_pf        = __out1, 
   match_date    = index_num,
   match_inexact = %str(var_num1 net invalid)
+);
+
+/* Check variables in string are case-insensitive */
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(var_NUM1 ne _CTRL_var_num1)
 );
 
 /*** inexact_vars test ***/
@@ -197,6 +215,14 @@ triggers and error. */
   inexact_vars  = var_num var_num1
 );
 
+/* Check that variable specification is case-insensitive. */
+%hash_match(
+  in_ds         = __data1, 
+  out_pf        = __out1, 
+  match_date    = index_num,
+  match_inexact = %str(VAR_num1 ne invalid),
+  inexact_vars  = var_NUM1
+);
 
 /*** n_control tests ***/
 

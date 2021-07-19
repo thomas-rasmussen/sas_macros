@@ -35,7 +35,7 @@ are set to not being specified. */
 %macro _test1;
 %local opt_vars i i_var;
 %let opt_vars = codes_ds id index_date diag_code diag_date code_type      
-                lookback_period lookback_unit exclude_groups keep_pop_vars  
+                lookback_length lookback_unit exclude_groups keep_pop_vars  
                 keep_cci_vars print_notes verbose del;          
 
 %do i = 1 %to %sysfunc(countw(&opt_vars, %str( )));
@@ -122,6 +122,9 @@ run;
 /* Check error if variable does not exist. */
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, id = abc);
 
+/* Check that variable specification is case-insensitive */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, id = ID);
+
 /* Check error if id variable missing from only one of the input datasets */
 data tmp;
   set pop;
@@ -143,6 +146,7 @@ run;
 /* Check non-default name works*/
 data tmp;
   set pop;
+  format index_date1 yymmdd10.;
   index_date1 = index_date;
 run;
 %calculate_cci(
@@ -174,6 +178,20 @@ run;
   index_date = index_date index_date_chr
 );
 
+/* Check variable name is case-insensitive */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, index_date = INDEX_DATE);
+
+/* Check that numeric variable that is not a date variable triggers an error. */
+data tmp;
+  set pop;
+  format index_date_dt datetime20.;
+  index_date_no_fmt = index_date;
+  index_date_dt = dhms(datepart(index_date), 0, 0, 0);
+run;
+
+%calculate_cci(pop_ds = tmp, diag_ds = diag, out_ds = test, index_date = index_date_no_fmt);
+%calculate_cci(pop_ds = tmp, diag_ds = diag, out_ds = test, index_date = index_date_dt);
+
 
 /*** <diag_code> ***/
 
@@ -182,6 +200,7 @@ data tmp;
   set diag;
   diag_code1 = diag_code;
 run;
+
 %calculate_cci(
   pop_ds = pop,
   diag_ds = tmp,
@@ -211,14 +230,19 @@ run;
   diag_code = diag_code diag_code
 );
 
+/* Check variable name is case-insensitive */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, diag_code = DIAG_CODE);
+
 
 /*** <diag_date> ***/
 
 /* Check non-default name works*/
 data tmp;
   set diag;
+  format  diag_date1 yymmdd10.;
   diag_date1 = diag_date;
 run;
+
 %calculate_cci(
   pop_ds = pop,
   diag_ds = tmp,
@@ -248,27 +272,31 @@ run;
   diag_date = diag_date diag_date
 );
 
+/* Check variable name is case-insensitive */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, diag_date = DIAG_DATE);
 
-/*** <code_type> ***/
+/* Check that numeric variable that is not a date variable triggers an error. */
+data tmp;
+  set diag;
+  format diag_date_dt datetime20.;
+  diag_date_no_fmt = diag_date;
+  diag_date_dt = dhms(datepart(diag_date), 0, 0, 0);
+run;
 
-/* Check invalid value triggers error */
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, code_type = abc);
-
-/* Check valid values work */
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, code_type = sks);
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, code_type = icd);
+%calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test, diag_date = diag_date_no_fmt);
+%calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test, diag_date = diag_date_dt);
 
 
-/*** <lookback_period> ***/
+/*** <lookback_length> ***/
 
 /* check error if not non-negative integer input */
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = -1);
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = 1.9);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = -1);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = 1.9);
 
 /* check no error if non-negative integer input */
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = 0);
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = 4);
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_period = 01);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = 0);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = 4);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_length = 01);
 
 
 /*** <lookback_unit> ***/
@@ -483,7 +511,7 @@ run;
   diag_ds = diag,
   out_ds = test, 
   keep_cci_vars = y,
-  lookback_period = 1,
+  lookback_length = 1,
   lookback_unit = year
 );
 
@@ -492,7 +520,7 @@ run;
   diag_ds = diag,
   out_ds = test, 
   keep_cci_vars = y,
-  lookback_period = 1,
+  lookback_length = 1,
   lookback_unit = month
 );
 
@@ -501,7 +529,7 @@ run;
   diag_ds = diag,
   out_ds = test, 
   keep_cci_vars = y,
-  lookback_period = 1,
+  lookback_length = 1,
   lookback_unit = week
 );
 
@@ -510,7 +538,7 @@ run;
   diag_ds = diag,
   out_ds = test, 
   keep_cci_vars = y,
-  lookback_period = 1,
+  lookback_length = 1,
   lookback_unit = day
 );
 
@@ -519,8 +547,8 @@ run;
 PERFORMANCE
 *******************************************************************************/
 
-%let n_id = 10**5;
-%let n_diag = 100;
+%let n_id = 10**6;
+%let n_diag = 10;
 data pop;
   format id 8. index_date yymmdd10.;
   call streaminit(1);
