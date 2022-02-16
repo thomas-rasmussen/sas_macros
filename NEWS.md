@@ -4,6 +4,14 @@
 
 First version of empirical_cdf macro that calculates the empirical cumulative distribution function for a variable.
 
+### export_to_csv
+
+Export datasets to CSV.
+
+**Version 0.0.1**
+
+First version.
+
 ### calculate_cci
 
 Calculates the Charlson Comorbidity Index(CCI).
