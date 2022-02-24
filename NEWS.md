@@ -49,6 +49,16 @@ First version of macro, based on old syntax.
 
 First version of calculate_sd macro that calculates standardized differences (SD) of variables between two groups.
 
+
+### compress
+
+Compress a dataset
+
+**Version 0.0.1
+
+First version
+
+
 ### descriptive_summary
 
 Produces a descriptive summary, a so-called "table 1", of variables in a dataset. This macro is a renamed version
