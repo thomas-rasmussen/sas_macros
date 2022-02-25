@@ -186,16 +186,6 @@ correctly specified. */
 %descriptive_summary(in_ds = __data1, out_ds = __out1, var_list = bin_var, strata = by_char);
 %descriptive_summary(in_ds = __data1, out_ds = __out1, var_list = bin_var, strata = strata_num, weight = weight_num);
 
-/* test that a variable called "case" can be used in strata. */
-data __data1_case;
-  set __data1;
-  case = strata_num;
-run;
-
-%descriptive_summary(in_ds = __data1_case, out_ds = __out1_case, var_list = bin_var, strata = case);
-
-
-
 /*** Test "where" macro parameter ***/
 %descriptive_summary(
   in_ds = __data1, 
@@ -273,21 +263,21 @@ run;
   out_ds = __out1, 
   var_list = cat_var_num cont_var bin_var cat_var_char, 
   var_types = cont cont d cat,
-  var_stats = mean_stderr median_q1q3 n_pct n_pct
+  var_stats = mean_stddev median_q1q3 n_pct n_pct
 );
 %descriptive_summary(
   in_ds = __data1, 
   out_ds = __out1, 
   var_list = cat_var_num cont_var bin_var cat_var_char, 
   var_types = cat cont d cat,
-  var_stats = mean_stderr median_q1q3 n_pct n_pct
+  var_stats = mean_stddev median_q1q3 n_pct n_pct
 );
 %descriptive_summary(
   in_ds = __data1, 
   out_ds = __out1, 
   var_list = cat_var_num cont_var bin_var cat_var_char, 
   var_types = cont cont d cat,
-  var_stats = mean_stderr median_q1q3 mean_stderr n_pct
+  var_stats = mean_stddev median_q1q3 mean_stddev n_pct
 );
 
 
@@ -302,7 +292,7 @@ run;
   in_ds = __data1, 
   out_ds = __out1, 
   var_list = bin_var cont_var cat_var_num,
-  stats_cont = mean_stderr
+  stats_cont = mean_stddev
 ); 
 %descriptive_summary(
   in_ds = __data1, 
@@ -523,6 +513,49 @@ grouping or by-variables, datalines are still made. This is not the case when
 using by-statements in SAS procedures (right?), but is the case here as a consequence 
 of recoding the categorial variables with dummy variables. The behavior is most
 likely benificient to the user. */
+
+
+/*******************************************************************************
+VARIABLES NAMED CASE
+*******************************************************************************/
+
+/* "case" is not a valid variable name in proc sql. Check that macro can handle
+variables named case. */
+data __dat;
+  do i = 1 to 100;
+    case = 1;
+    var = 1;
+    output;
+  end;
+  drop i;
+run;
+
+%descriptive_summary(
+	in_ds = __dat,
+  out_ds = __out,
+	var_list = case
+	);
+
+%descriptive_summary(
+	in_ds = __dat,
+  out_ds = __out,
+	var_list = var,
+  by = case
+	);
+
+%descriptive_summary(
+	in_ds = __dat,
+  out_ds = __out,
+	var_list = var,
+  strata = case
+);
+
+%descriptive_summary(
+  in_ds = __dat,
+  out_ds = __out,
+  var_list = var,
+  weight = case
+);
 
 
 /*******************************************************************************
