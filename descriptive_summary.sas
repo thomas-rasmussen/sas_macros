@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.1.0
+VERSION:    0.1.1
 DATE:       2020-03-28
 ********************************************************************************
 DESCRIPTION:
@@ -534,15 +534,10 @@ LOAD AND RESTRICT INPUT DATA
 *******************************************************************************/
 %local strata_nmiss weight_nmiss weight_min;
 
-/* To avoid problem with proc sql when strata = case, we rename the strata
-variable here, and restore the name in the end. See issue #40.*/
-data __ds_data1(rename = (&strata = __strata_tmp));
+data __ds_data1;
   set &in_ds;
   where &where;
 run;
-%local strata_ori;
-%let strata_ori = &strata;
-%let strata = __strata_tmp;
 
 %if &syserr ne 0 %then %do;
   %put ERROR- The specified "where" condition:;
@@ -553,42 +548,75 @@ run;
 
 /* Check that the specified "strata" and "weight" variable does not contain 
 missing values / empty strings, and that "weight" does not contain negative 
-number . */
-%if %sysevalf(%lowcase(&strata) ne null or %lowcase(&weight) ne null) %then %do;
+number . 
+
+Some names eg "case" is not allowed in proc sql, so to make sure the below
+code works, we temporarily rename any strata and weight variables
+*/
+%local strata_ori weight_ori;
+%let strata_ori = &strata;
+%let weight_ori = &weight;
+%let strata = __strata_tmp;
+%let weight = __weight_tmp;
+
+data __ds_data1;
+  set __ds_data1;
+  %if &strata_ori ne null %then %do; 
+    rename &strata_ori = __strata_tmp;
+  %end;
+  %if &weight_ori ne null %then %do;
+    rename &weight_ori = __weight_tmp;
+  %end;
+run;
+
+%if %sysevalf(%lowcase(&strata_ori) ne null or %lowcase(&weight_ori) ne null) %then %do;
   proc sql noprint;
-    select  %if %lowcase(&strata) ne null %then %do; nmiss(&strata) %end;
-            %if %lowcase(&weight) ne null %then %do;
-            %if %lowcase(&weight) ne null and %lowcase(&strata) ne null %then %do; , %end;
+    select  %if %lowcase(&strata_ori) ne null %then %do; nmiss(&strata) %end;
+            %if %lowcase(&weight_ori) ne null %then %do;
+            %if %lowcase(&weight_ori) ne null and %lowcase(&strata_ori) ne null %then %do; , %end;
             nmiss(&weight), 
             min(&weight)
             %end;
-      into  %if %lowcase(&strata) ne null %then %do; :strata_nmiss %end;
-            %if %lowcase(&weight) ne null %then %do;
-            %if %lowcase(&weight) ne null and %lowcase(&strata) ne null %then %do; , %end;
+      into  %if %lowcase(&strata_ori) ne null %then %do; :strata_nmiss %end;
+            %if %lowcase(&weight_ori) ne null %then %do;
+            %if %lowcase(&weight_ori) ne null and %lowcase(&strata_ori) ne null %then %do; , %end;
             :weight_nmiss, 
             :weight_min
             %end;
       from __ds_data1(keep = 
-        %if %lowcase(&strata) ne null %then %do; &strata %end;
-        %if %lowcase(&weight) ne null %then %do; &weight %end;
+        %if %lowcase(&strata_ori) ne null %then %do; &strata %end;
+        %if %lowcase(&weight_ori) ne null %then %do; &weight %end;
         );
   quit;
 
   %if  &strata_nmiss > 0 %then %do;
-    %put ERROR: The specified "strata" variable "&strata" contains missing values / empty strings!;
+    %put ERROR: The specified "strata" variable "&strata_ori" contains missing values / empty strings!;
     %goto end_of_macro;
   %end;
-  %if %lowcase(&weight) ne null %then %do;
+  %if %lowcase(&weight_ori) ne null %then %do;
     %if  &weight_nmiss > 0 %then %do;
-      %put ERROR: The specified "weight" variable "&weight" contains missing values!;
+      %put ERROR: The specified "weight" variable "&weight_ori" contains missing values!;
       %goto end_of_macro;
     %end;
     %if %sysevalf(&weight_min < 0) %then %do;
-      %put ERROR: The specified "weight" variable "&weight" contains one or more negative weights!;
+      %put ERROR: The specified "weight" variable "&weight_ori" contains one or more negative weights!;
       %goto end_of_macro;      
     %end;
   %end;
 %end;
+
+data __ds_data1;
+  set __ds_data1;
+  %if &strata_ori ne null %then %do; 
+    rename __strata_tmp = &strata_ori;
+  %end;
+  %if &weight_ori ne null %then %do;
+    rename  __weight_tmp = &weight_ori;
+  %end;
+run;
+
+%let strata = &strata_ori;
+%let weight = &weight_ori;
 
 /*******************************************************************************
 RENAME VARIABLES
@@ -1390,7 +1418,7 @@ proc sql noprint;
     from __ds_data11;
 quit;
 
-data &out_ds(rename = (__strata_tmp = &strata_ori));;
+data &out_ds;
   /* Reorder columns so that "by" and "strata" variables are the left-most 
   columns. */
   retain

@@ -64,8 +64,13 @@ First version
 Produces a descriptive summary, a so-called "table 1", of variables in a dataset. This macro is a renamed version
 of the deprecated pt_char macro.
 
+**Version 0.1.1**
+
+- Fixed bug introduced in #40
+
 **Version 0.1.0**
 
+First version
 
 ### hash_match
 
