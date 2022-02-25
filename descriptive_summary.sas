@@ -66,7 +66,7 @@ var_stats:        Statistics to calculate for each variable in var_list. If the
                   statistics for the calculated "__n" variable.
 stats_cont:       Statistics to calculate for continuous variables.
                   - Median (Q1-Q3): stat_cont = median_q1q3 (default)
-                  - Mean (standard error): stat_cont = mean_stderr. 
+                  - Mean (SD): stat_cont = mean_stddev. 
 stats_d:          Statistics to calculate for dichotomous and categorical 
                   variables:
                   - N (%): stats_d = n_pct (default)
@@ -81,7 +81,7 @@ cat_groups_max:   If var_types = auto then cat_groups_max specify the maximum
                   can take before being deemed a continuous variable. See 
                   var_types documentation. Default is cat_groups_max = 20. 
 decimals_d:       Decimals to show for n statistics. Default is decimal_d = 0.
-decimals_cont:    Decimals to show for median/mean/stedrr/Q1/Q3 statistics.
+decimals_cont:    Decimals to show for median/mean/stddev/Q1/Q3 statistics.
                   Default is decimal_cont = 1.
 decimals_pct:     Decimals to show for percentages. Default is decimal_pct = 1.
 decimal_mark:     Symbol used as decimal separator:
@@ -383,7 +383,7 @@ manually specified variable types matches the number of variables in
 %if &var_stats ne auto %then %do;
   %do i = 1 %to %sysfunc(countw(&var_stats, %str( )));
     %let i_var = %scan(&var_stats, &i, %str( ));
-    %if %eval(&i_var in n_pct pct_n median_q1q3 mean_stderr) = 0 %then %do;
+    %if %eval(&i_var in n_pct pct_n median_q1q3 mean_stddev) = 0 %then %do;
       %put ERROR: "var_stats = &var_stats";
       %put ERROR: contains invalid value "&i_var";
       %goto end_of_macro; 
@@ -407,7 +407,7 @@ of manually specified variable statistics matches the number of variables in
 /*** "stats_cont" checks ***/
 
 /* Check that "stats_cont" has a valid value. */
-%if %eval(&stats_cont in median_q1q3 mean_stderr) = 0  %then %do;
+%if %eval(&stats_cont in median_q1q3 mean_stddev) = 0  %then %do;
   %put ERROR: "stats_cont" has invalid value  "&stats_cont";
   %goto end_of_macro; 
 %end;
@@ -929,7 +929,7 @@ types */
     (
       (&i_type = d or &i_type = cat) and ^(&i_stat = n_pct  or &i_stat = pct_n))
       or
-      (&i_type = cont and ^(&i_stat = median_q1q3 or &i_stat = mean_stderr))
+      (&i_type = cont and ^(&i_stat = median_q1q3 or &i_stat = mean_stddev))
     ) %then %do;
     %put ERROR: The "var_list" variable "&i_var_input" has;
     %put ERROR: type "%sysfunc(compress(&i_type))" and stat "%sysfunc(compress(&i_stat))", which is not compatible!;
@@ -1206,7 +1206,7 @@ proc means data = __ds_data3 noprint vardef = df;
         median(&i_var) = &i_var._median
         p75(&i_var) = &i_var._p75
       %end;
-      %else %if &i_stat = mean_stderr %then %do;
+      %else %if &i_stat = mean_stddev %then %do;
         mean(&i_var) = &i_var._mean
         stddev(&i_var) = &i_var._stddev
       %end;
@@ -1294,8 +1294,8 @@ data __ds_data6;
           ")";
         else __stat_char = "n/a";
     %end;
-    /* mean_stderr*/
-    %else %if &i_stat = mean_stderr %then %do;
+    /* mean_stddev*/
+    %else %if &i_stat = mean_stddev %then %do;
       __stat_num1 = &i_var._mean;
       __stat_num2 = &i_var._stddev;
       __stat_num3 = .;

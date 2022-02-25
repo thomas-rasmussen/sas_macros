@@ -68,6 +68,9 @@ of the deprecated pt_char macro.
 
 - Fixed bug introduced in #40
 
+- Fixed standard deviation / standard error confusion with respect to statistics for continuous variables. 
+  stats_cont = mean_stderr should have been called mean_stddev, which has now been fixed.
+
 **Version 0.1.0**
 
 First version

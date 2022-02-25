@@ -263,21 +263,21 @@ correctly specified. */
   out_ds = __out1, 
   var_list = cat_var_num cont_var bin_var cat_var_char, 
   var_types = cont cont d cat,
-  var_stats = mean_stderr median_q1q3 n_pct n_pct
+  var_stats = mean_stddev median_q1q3 n_pct n_pct
 );
 %descriptive_summary(
   in_ds = __data1, 
   out_ds = __out1, 
   var_list = cat_var_num cont_var bin_var cat_var_char, 
   var_types = cat cont d cat,
-  var_stats = mean_stderr median_q1q3 n_pct n_pct
+  var_stats = mean_stddev median_q1q3 n_pct n_pct
 );
 %descriptive_summary(
   in_ds = __data1, 
   out_ds = __out1, 
   var_list = cat_var_num cont_var bin_var cat_var_char, 
   var_types = cont cont d cat,
-  var_stats = mean_stderr median_q1q3 mean_stderr n_pct
+  var_stats = mean_stddev median_q1q3 mean_stddev n_pct
 );
 
 
@@ -292,7 +292,7 @@ correctly specified. */
   in_ds = __data1, 
   out_ds = __out1, 
   var_list = bin_var cont_var cat_var_num,
-  stats_cont = mean_stderr
+  stats_cont = mean_stddev
 ); 
 %descriptive_summary(
   in_ds = __data1, 
