@@ -248,3 +248,13 @@ Stratification and summarization of risk-time
 **Version 0.1.0**
 
 - Made complete overhaul of old macro and added it to this repository 
+
+### smooth_periods
+
+Smooth time periods.
+
+**Version 0.0.1**
+
+- First version
+
+
