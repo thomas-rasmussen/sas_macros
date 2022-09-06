@@ -1,22 +1,24 @@
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.1.0
+VERSION:    0.1.1
 ********************************************************************************
 DESCRIPTION:
 Calculates the Charlson Comorbidity Index (CCI).
 
 DETAILS:
-Implementation of the CCI for use with (Danish) administrative registry data,
-using ICD-8 and ICD-10 diagnosis codes. In Danish registries, diagnosis codes
-are often coded as SKS codes, which are ICD-10 codes with a "D" prefix. The macro
-will automatically handle such codes if they are present in the specified
-diagnosis data. 
+Calculates the CCI for each person in a population on a specified index date,
+using an input dataset with information on the population, and an input dataset
+with information on diagnoses.
 
-If a person has both mild and moderate to severe liver disease at the index date,
+If a person has both mild and moderate to severe liver disease,
 only the severe liver disease will be included in the CCI. The same is the case
 if a person has both diabetes with and without end-organ damage (only diabetes
 with end-organ damage is included), and if a person has both non-metastatic and 
 metastatic solid tumours (only metastatic solid tumour is included).
+
+Danish administrative registry data often code diagnoses as so-called SKS
+codes, where ICD-10 diagnoses have a "D" prefix. By default, the macro will
+automatically detect and handle such codes if they are present in the data. 
 
 This macro was originally inspired by a similar macro by Anders Hammerich Riis
 at the Department of Clinical Epidemiology, Aarhus University Hospital.
@@ -41,34 +43,27 @@ diag_ds:          (libname.)member-name of input dataset with diagnosis data.
                   The dataset must contain an "id", "diagnosis code" and 
                   "diagnosis date" variable. See <id>, <diag_code> 
                   and  <diag_date>.
-out_ds:           Name of output dataset, ie <pop_ds> with an added CCI variable.
+out_ds:           Name of output dataset.
 *** OPTIONAL ***
 codes_ds:         Name of input dataset with disease group definitions that 
                   will overwrite the default codes used in the macro. 
                   Experimental feature. See examples for guidance.
-id:               Name of id variable in <pop_ds> and <diag_ds>. 
+id:               Name of person id variable in <pop_ds> and <diag_ds>.
                   Default is id = id.
 index_date:       Name of variable with index dates in <pop_ds>. The CCI is 
                   calculated with respect to this date. Must be a numeric
-                  variable with a recognized date format, eg DATEw. or
-                  YYMMDDw.. See code for full list of recognized formats.
-                  Default is index_date = index_date.
-diag_code:        Name of variable with diagnosis codes in <diag_ds>. Note that
-                  the variable is expected to hold both ICD-8 and ICD-10/SKS
-                  (ICD-10 with "D" prefix used in some Danish registries)
-                  codes. The macro will automatically detect and handle SKS
-                  codes. Must be a character variable.
+                  variable. Default is index_date = index_date.
+diag_code:        Name of variable with ICD-8/ICD-10/SKS diagnosis code
+                  in <diag_ds>. Must be a character variable.
                   Default is diag_code = diag_code.
 diag_date:        Name of variable with diagnosis dates. Must be a numeric
-                  variable with a recognized date format, eg DATEw. or 
-                  YYMMDDw.. See code for full list of recognized formats.
-                  Default is diag_date = diag_date.
+                  variable. Default is diag_date = diag_date.
 lookback_length:  Lookback length from <index_date> defining the lookback
                   period in which we look for diagnoses to include when 
                   calculating the CCI. By default
                   lookback_length = 200 together with 
                   lookback_unit = year, ie a lookback period of 200 years,
-                  in practice meaning that we use all available data on
+                  effectively meaning that we use all available data on
                   diagnoses before the index date to calculate the CCI. 
                   Must be a non-negative integer. 
 lookback_unit:    Unit of the lookback length specified in <lookback_length>.
@@ -79,7 +74,7 @@ lookback_unit:    Unit of the lookback length specified in <lookback_length>.
 exclude_groups:   Disease groups in the definition of the CCI that should be 
                   discarded in the calculation of CCI. Must be a space-separated
                   list of integers corresponding to the numbering of the
-                  disease groups. See the "CODED" section of the macro.
+                  disease groups. See the "CODES" section of the macro.
                   Default is exclude_groups = null, ie no disease groups are
                   excluded.                
 keep_pop_vars:    Should auxiliary variables in <pop_ds>, ie variables not
@@ -90,6 +85,10 @@ keep_cci_vars:    Should the individual disease group variables used in the
                   calculation of the CCI be included in <out_ds>?
                   - Yes: keep_pop_vars = y 
                   - No:  keep_pop_vars = n (default)
+convert_sks:      Should the macro detect and convert ICD-10 diagnoses coded
+                  as SKS codes? 
+                  - Yes: convert_sks = y (default)
+                  - No:  convert_sks = n
 print_notes:      Print notes in log?
                   - Yes: print_notes = y
                   - No:  print_notes = n (default)
@@ -115,6 +114,7 @@ del:              Delete intermediate datasets created by the macro?
   exclude_groups  = null,
   keep_pop_vars   = y,
   keep_cci_vars   = n,
+  convert_sks     = y,
   print_notes     = n,
   verbose         = n,
   del             = y
@@ -126,14 +126,6 @@ del:              Delete intermediate datasets created by the macro?
 %local opt_notes;
 %let opt_notes = %sysfunc(getoption(notes));
 options nonotes;
-
-/* Make sure there are no intermediate dataset from from a previous 
-run of the macro in the work directory before execution. */
-proc datasets nolist nodetails;
-  delete __cci_:;
-run;
-quit;
-
 
 /*******************************************************************************
 INPUT PARAMETER CHECKS
@@ -175,7 +167,7 @@ INPUT PARAMETER CHECKS
 %local parms i i_parm;
 %let parms =  pop_ds diag_ds out_ds codes_ds id index_date diag_code       
               diag_date lookback_length lookback_unit   
-              exclude_groups keep_pop_vars keep_cci_vars del;   
+              exclude_groups keep_pop_vars keep_cci_vars convert_sks del;   
 %do i = 1 %to %sysfunc(countw(&parms, %str( )));
   %let i_parm = %scan(&parms, &i, %str( ));
   %if %bquote(&&&i_parm) = %then %do;
@@ -342,9 +334,41 @@ input data. */
   %end;
 %end; /*End of i-loop */
 
+/* index_date: check numeric variable */
+proc contents data = &pop_ds noprint out = __cc_pop_contents;
+run;
+
+%local index_date_type;
+proc sql noprint;
+  select type into: index_date_type
+    from __cc_pop_contents
+    where lowcase(name) = %lowcase("&index_date");
+quit;
+
+%if &index_date_type = 2 %then %do;
+  %put ERROR: <index_date> variable "&index_date" is not numeric!;
+  %goto end_of_macro;
+%end;
+
+/* diag_date: check numeric variable */
+proc contents data = &diag_ds noprint out = __cc_diag_contents;
+run;
+
+%local diag_date_type;
+proc sql noprint;
+  select type into: diag_date_type
+    from __cc_diag_contents
+    where lowcase(name) = %lowcase("&diag_date");
+quit;
+
+%if &diag_date_type = 2 %then %do;
+  %put ERROR: <diag_date> variable "&diag_date" is not numeric!;
+  %goto end_of_macro;
+%end;
+
 /* lookback_length: check non-negative integer */
 %if %sysfunc(prxmatch('^\d*$', &lookback_length)) = 0 %then %do;
-  %put ERROR: <lookback_length> must be a a non negative integer!;
+  %put ERROR: <lookback_length> must be a a non-negative integer!;
   %goto end_of_macro; 
 %end;
 
@@ -406,7 +430,7 @@ run;
   %put ERROR: Valid values are:;
   %put ERROR: del = y (Yes);
   %put ERROR: del = n (No);
-  %Put ERROR: Note that the parameter is case-sensitive.;
+  %put ERROR: Note that the parameter is case-sensitive.;
   %goto end_of_macro;
 %end;
 
@@ -416,7 +440,17 @@ run;
   %put ERROR: Valid values are:;
   %put ERROR: del = y (Yes);
   %put ERROR: del = n (No);
-  %Put ERROR: Note that the parameter is case-sensitive.;
+  %put ERROR: Note that the parameter is case-sensitive.;
+  %goto end_of_macro;
+%end;
+
+/* convert_sks: check parameter has valid value. */          
+%if %eval(&convert_sks in n y) = 0 %then %do;
+  %put ERROR: <convert_sks> does not have a valid value!;
+  %put ERROR: Valid values are:;
+  %put ERROR: del = y (Yes);
+  %put ERROR: del = n (No);
+  %put ERROR: Note that the parameter is case-sensitive.;
   %goto end_of_macro;
 %end;
 
@@ -426,11 +460,27 @@ run;
   %put ERROR: Valid values are:;
   %put ERROR: del = y (Yes);
   %put ERROR: del = n (No);
-  %Put ERROR: Note that the parameter is case-sensitive.;
+  %put ERROR: Note that the parameter is case-sensitive.;
   %goto end_of_macro;
 %end;
 
+
+/*******************************************************************************
+DELETE INTERMEDIATE DATASETS
+*******************************************************************************/
+
+/* Make sure there are no intermediate dataset from from a previous 
+run of the macro in the work directory before execution. */
+%if &verbose = y %then %do;
+  %put calculate_cci: *** Remove any intermediate datasets from a previous run ***;
+%end;
+
+proc datasets nolist nodetails;
+  delete __cci_:;
+run;
+quit;
     
+
 /*******************************************************************************
 CODES
 *******************************************************************************/
@@ -439,7 +489,7 @@ CODES
   %put calculate_cci: *** Define disease groups ***;
 %end;
 
-/* Save CCI code definitions in macro variables */
+/* Save CCI disease group definitions in macro variables */
 %local i;
 %do i = 1 %to 19;
   %local cci_&i._label cci_&i._icd8 cci_&i._icd10;
@@ -570,7 +620,7 @@ MODIFY CODES
 %end;
 
 %if &verbose = y %then %do;
-  %put calculate_cci:   Final code list:;
+  %put calculate_cci: *** Codelist used to define CCI: ***;
   %do i = 1 %to 19;
     %if &i < 10 %then %do;
       %put calculate_cci:   Group &i       - &&cci_&i._label;
@@ -600,6 +650,7 @@ data __cc_pop1;
   %end;
 run;
 
+/* Restrict diagnosis data to only include data on id's from the population. */
 proc sql;
   create table __cc_diag1 as
     select &id, &diag_date, &diag_code
@@ -610,145 +661,18 @@ quit;
 
 
 /*******************************************************************************
-INPUT DATA CHECKS
+CONVERT SKS CODES
 *******************************************************************************/
 
-%if &verbose = y %then %do;
-  %put calculate_cci: *** Input data checks ***;
-%end;
+%if &convert_sks = y %then %do;
+  %if &verbose = y %then %do;
+    %put calculate_cci: *** Convert SKS codes ***;
+  %end;
 
-/*** Check index_date and diag_date are numeric variables with a
-recognized date format ***/
-
-/* List of recognized date formats. */
-%local date_formats;
-%let date_formats = 
-  "DATE" "E8601DA" "YYMMDD"
-  "DDMMYY" "DDMMYYB" "DDMMYYC" "DDMMYYD" "DDMMYYN" "DDMMYYP" "DDMMYYS" 
-  "EURDFDE" "EURDFWDX" "EURDFWKX" "MINGUO" "MMDDYY" "MMDDYYB" 
-  "MMDDYYC" "MMDDYYD" "MMDDYYN" "MMDDYYP" "MMDDYYS"
-;
-
-proc contents data = __cc_pop1(obs = 0) noprint out = __cc_pop_ds_info1;
-run;
-
-proc contents data = __cc_diag1(obs = 0) noprint out = __cc_diag_ds_info1;
-run;
-
-%local __fail_index_date_is_num __fail_index_date_is_date __fail_index_date_format;
-data __cc_pop_ds_info2;
-  set __cc_pop_ds_info1;
-  where lowcase(name) = lowcase("&index_date");
-  call symput("__fail_index_date_is_num", put((type = 1), 1.));
-  call symput("__fail_index_date_is_date", put((upcase(format) in (%upcase(&date_formats))), 1.));
-  call symput("__fail_index_date_format", format);
-run;
-
-%local __fail_diag_date_is_num __fail_diag_date_is_date __fail_diag_date_format;
-data __cc_diag_ds_info2;
-  set __cc_diag_ds_info1;
-  where lowcase(name) = lowcase("&diag_date");
-  call symput("__fail_diag_date_is_num", put((type = 1), 1.));
-  call symput("__fail_diag_date_is_date", put((upcase(format) in (%upcase(&date_formats))), 1.));
-  call symput("__fail_diag_date_format", format);
-run;
-
-%if &__fail_index_date_is_num = 0 %then %do;
-  %put ERROR: Variable "&index_date" is not numeric;
-  %goto end_of_macro;
-%end;
-
-%if &__fail_index_date_is_date = 0 %then %do;
-  %put ERROR: Variable "&index_date" has format &__fail_index_date_format..;
-  %put ERROR: This format is not recognized as a date format by the macro.;
-  %put ERROR: If the variable IS a date variable, use another date format;
-  %put ERROR: recognized by the macro (eg DATEw.);
-  %goto end_of_macro;
-%end;
-
-%if &__fail_diag_date_is_num = 0 %then %do;
-  %put ERROR: Variable "&diag_date" is not numeric;
-  %goto end_of_macro;
-%end;
-
-%if &__fail_diag_date_is_date = 0 %then %do;
-  %put ERROR: Variable "&diag_date" has format &__fail_diag_date_format..;
-  %put ERROR: This format is not recognized as a date format by the macro.;
-  %put ERROR: If the variable IS a date variable, use another date format;
-  %put ERROR: recognized by the macro (eg DATEw.);
-  %goto end_of_macro;
-%end;
-
-/*** Determine if ICD-10 or SKS codes are used in the data ***/
-
-/* Take small random sample of the diagnosis data. */
-%local n_diag;
-proc sql noprint;
-  select count(*) into: n_diag
-    from __cc_diag1;
-quit;
-
-proc surveyselect data = __cc_diag1 method = srs n = %sysfunc(min(1000, &n_diag))
-  out = __cc_codes1 noprint;
-run;
-
-data __cc_codes2;
-  set __cc_codes1;
-  format __code_type $7.;
-  if &diag_code = "" then __code_type = "empty";
-  else if prxmatch('/^D[a-z]\d*$/i', compress(&diag_code)) 
-    then __code_type = "sks";
-  else if prxmatch('/^[\d]+$/i', compress(&diag_code)) 
-    then __code_type = "icd8";
-  else if prxmatch('/^[a-z]\d*$/i', compress(&diag_code)) 
-    then __code_type = "icd10";
-  else __code_type = "unknown";
-  __dummy = 1;
-  keep __code_type __dummy;
-run;
-
-proc means data = __cc_codes2 nway noprint;
-  class __code_type;
-  output out = __cc_codes3 sum(__dummy) = n;
-run;
-
-%local __n_empty __n_sks __n_icd8 __n_icd10 __n_unknown;
-%let __n_empty = 0;
-%let __n_sks = 0;
-%let __n_icd8 = 0;
-%let __n_icd10 = 0;
-%let __n_unknown = 0;
-
-data _null_;
-  set __cc_codes3;
-  if __code_type = "empty" then call symput("__n_empty", put(n, comma12.));
-  else if __code_type = "sks" then call symput("__n_sks", put(n, comma12.));
-  else if __code_type = "icd8" then call symput("__n_icd8", put(n, comma12.));
-  else if __code_type = "icd10" then call symput("__n_icd10", put(n, comma12.));
-  else if __code_type = "unknown" then call symput("__n_unknown", put(n, comma12.));
-run;
-
-%if &verbose = y %then %do;
-  %put calculate_cci: Code types in sample of data:;
-  %put calculate_cci: - Empty string: %left(%bquote(&__n_empty));
-  %put calculate_cci: - SKS:          %left(%bquote(&__n_sks));
-  %put calculate_cci: - ICD-8:        %left(%bquote(&__n_icd8));
-  %put calculate_cci: - ICD-10:       %left(%bquote(&__n_icd10));
-  %put calculate_cci: - Unknown:      %left(%bquote(&__n_unknown));
-%end;
-
-%if &__n_unknown ne 0 %then %do;
-  %put ERROR: Variable "&diag_code" has values that;
-  %put ERROR: that could not be identified as an empty string, or an;
-  %put ERROR: ICD-8/ICD-10/SKS code.;
-  %goto end_of_macro;
-%end;
-
-/* Convert SKS codes to ICD-10. */
-%if &__n_sks ne 0 %then %do;
+  /* Convert any SKS codes in the data to ICD-10*/
   data __cc_diag1;
     set __cc_diag1;
-    if prxmatch('/^D[a-z]/i', compress(&diag_code)) 
+    if prxmatch('/^D[a-z]\d*$/i', compress(&diag_code))
       then &diag_code = substr(&diag_code, 2);
   run;
 %end;
@@ -837,8 +761,7 @@ data &out_ds;
       then cci_&i = 1;
   %end;
 
-  /* Calculation of CCI. This is properly not the original CCI definition,
-  but rather some modification. This should be investigated at some point. */
+  /* Calculation of CCI. */
   if last.__obs_id then do;
     cci = 1*(cci_1 + cci_2 + cci_3 + cci_4 + cci_5 + cci_6 + cci_7 +
              cci_8 + (1 - cci_17)*cci_9 + (1 - cci_13)*cci_10) + 
@@ -859,8 +782,11 @@ run;
 %end_of_macro:
 
 
-/* Delete temporary datasets created by the macro. */
+/* Delete intermediate datasets created by the macro. */
 %if &del ne n  %then %do;
+%if &verbose = y %then %do;
+  %put calculate_cci: *** Delete intermediate datasets ***;
+%end;
   proc datasets nodetails nolist;
     delete __cc_:;
   run;

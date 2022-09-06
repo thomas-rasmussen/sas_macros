@@ -23,20 +23,20 @@ data diag;
 run;
 
 
-/* Check that the macro gives an error if any of the required macro parameters 
+/* Check that the macro throws an error if any of the required macro parameters 
 are not specified. */
 %calculate_cci();
 %calculate_cci(pop_ds = pop);
 %calculate_cci(pop_ds = pop, diag_ds = diag);
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test);
 
-/* Check that the macro gives an error if any of the optional macro parameters
-are set to not being specified. */
+/* Check that the macro throws an error if any of the optional macro parameters
+are empty. */
 %macro _test1;
 %local opt_vars i i_var;
-%let opt_vars = codes_ds id index_date diag_code diag_date code_type      
+%let opt_vars = codes_ds id index_date diag_code diag_date   
                 lookback_length lookback_unit exclude_groups keep_pop_vars  
-                keep_cci_vars print_notes verbose del;          
+                keep_cci_vars convert_sks print_notes verbose del;          
 
 %do i = 1 %to %sysfunc(countw(&opt_vars, %str( )));
   %let i_var = %scan(&opt_vars, &i, %str( ));
@@ -44,11 +44,6 @@ are set to not being specified. */
 %end;
 %mend _test1;
 %_test1;
-
-
-/* Uncertain what if any, tests are appropriate for checking the names
-of input/output datasets. For now, we stick with conventions used in other 
-macros. */
 
 
 /*** <pop_ds> ***/
@@ -68,6 +63,7 @@ data tmp;
   cci_name = id;
 run;
 %calculate_cci(pop_ds = tmp, diag_ds = diag, out_ds = test);
+
 data tmp;
   set pop;
   __name = id;
@@ -92,13 +88,13 @@ data tmp;
   cci_name = id;
 run;
 %calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test);
+
 data tmp;
   set diag;
   __name = id;
 run;
 
 %calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test);
-
 
 
 /*** <out_ds> ***/
@@ -180,17 +176,6 @@ run;
 
 /* Check variable name is case-insensitive */
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, index_date = INDEX_DATE);
-
-/* Check that numeric variable that is not a date variable triggers an error. */
-data tmp;
-  set pop;
-  format index_date_dt datetime20.;
-  index_date_no_fmt = index_date;
-  index_date_dt = dhms(datepart(index_date), 0, 0, 0);
-run;
-
-%calculate_cci(pop_ds = tmp, diag_ds = diag, out_ds = test, index_date = index_date_no_fmt);
-%calculate_cci(pop_ds = tmp, diag_ds = diag, out_ds = test, index_date = index_date_dt);
 
 
 /*** <diag_code> ***/
@@ -275,17 +260,6 @@ run;
 /* Check variable name is case-insensitive */
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, diag_date = DIAG_DATE);
 
-/* Check that numeric variable that is not a date variable triggers an error. */
-data tmp;
-  set diag;
-  format diag_date_dt datetime20.;
-  diag_date_no_fmt = diag_date;
-  diag_date_dt = dhms(datepart(diag_date), 0, 0, 0);
-run;
-
-%calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test, diag_date = diag_date_no_fmt);
-%calculate_cci(pop_ds = pop, diag_ds = tmp, out_ds = test, diag_date = diag_date_dt);
-
 
 /*** <lookback_length> ***/
 
@@ -303,7 +277,8 @@ run;
 
 /* Check invalid value triggers error */
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_unit = "year");
-%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_unit = forthnight);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_unit = fortnight);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_unit = Year);
 
 /* Check valid values work */
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, lookback_unit = year);
@@ -325,6 +300,7 @@ run;
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, exclude_groups = "1" "12");
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, exclude_groups = 20);
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, exclude_groups = 0);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, exclude_groups = 1 20);
 
 
 /*** <keep_pop_vars> ***/
@@ -349,7 +325,18 @@ run;
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, keep_cci_vars = y);
 
 
-/*** <print_note> ***/
+/*** <convert_sks> ***/
+
+/* Check invalid values triggers errors */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, convert_sks = abc);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, convert_sks = Y);
+
+/* Check valid values works */
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, convert_sks = n);
+%calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, convert_sks = y);
+
+
+/*** <print_notes> ***/
 
 /* Check invalid values triggers errors */
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test, print_notes = abc);
@@ -390,9 +377,10 @@ option notes;
 
 
 /*******************************************************************************
-TEST ALGORITHM
+TEST CCI ALGORITHM
 *******************************************************************************/
 
+/* Test that the CCI algorithm is correctly implemented. */
 data pop;
   length id 8 index_date 8;
   format index_date yymmdd10.;
@@ -542,6 +530,45 @@ run;
   lookback_unit = day
 );
 
+/*******************************************************************************
+TEST NON-DATE NUMERIC VARIABLE BEHAVIOR
+*******************************************************************************/
+
+/* Test what happens if unformatted decimal number is used as date */
+data pop;
+  length id index_date 8;
+  input id index_date;
+  datalines;
+  1 100.5
+  ;
+run;
+
+data diag;
+  length id diag_date 8 diag_code $10;
+  input id diag_date diag_code;
+  datalines;
+  1 90 I23
+  ;
+run;
+
+%calculate_cci(
+  pop_ds = pop, 
+  diag_ds = diag,
+  out_ds = test,
+  lookback_length = 9,
+  lookback_unit = day
+);
+
+%calculate_cci(
+  pop_ds = pop, 
+  diag_ds = diag,
+  out_ds = test,
+  lookback_length = 11,
+  lookback_unit = day
+);
+
+/* The macro works as you would expect, and no warnings or errors are produced. */
+
 
 /*******************************************************************************
 PERFORMANCE
@@ -595,8 +622,8 @@ Installed memory (RAM): 256 GB
 
 /* n_id = 10**5 n_diag = 100 */
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test);
-/* run-time: 42s */
+/* run-time: 47s */
 
 /* n_id = 10**6 n_diag = 10 */
 %calculate_cci(pop_ds = pop, diag_ds = diag, out_ds = test);
-/* run-time: 46s */
+/* run-time: 50s */

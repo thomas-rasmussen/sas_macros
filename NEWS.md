@@ -16,6 +16,19 @@ First version.
 
 Calculates the Charlson Comorbidity Index(CCI).
 
+**Version 0.1.1**
+
+- Updated the examples.
+
+- Removed format constraints on the input date variables, since this seemed more likely to hurt than help users.
+
+- Updated how diagnosis codes in the input data are checked, so that unrecognized codes no longer trigger an error,
+  but are instead discarded the same way other codes not included in the CCI are. This error-throwing behaviour
+  when finding unrecognized codes was causing a lot of problems with real world data, forcing users to either do
+  non-trivial pre-cleaning of data, or hot-fixing the macro to not throw errors, in scenarios where the macro should
+  just work. In hindsight, validating the input data also seems inappropriate and out of scope of the macro.
+
+
 **Version 0.1.0**
 
 Overhaul of entire macro. 
