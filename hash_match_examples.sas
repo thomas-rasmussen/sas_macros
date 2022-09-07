@@ -14,7 +14,7 @@ fu_end:       End of follow-up. Minimum of end of study, death, censoring event,
 birth_year:   Birth year
 male:         Male (1 = yes)
 disease_date: Date of diagnosis of a certain disease/outcome
-cat_var:      Categorical auxiliary variable 
+cat_var:      Categorical auxiliary variable
 */
 
 data sourcepop;
@@ -154,6 +154,8 @@ run;
  
 
 */
+
+
 /*******************************************************************************
 ADVANCED USE
 *******************************************************************************/
@@ -186,6 +188,165 @@ parameters in the macro:
 
 
 /*******************************************************************************
+MATCHING ON CHARLSON COMORBIDITY INDEX (CCI)
+*******************************************************************************/
+
+/* Matching on disease scores like the CCI is commonly done in an attempt to
+match patients with the same level of comorbidity. The CCI summarizes
+comorbidities of a patient into a single score, typically categorized as
+0/1-2/+3. The CCI is not time-invariant like birth year or sex, but changes over
+time as the patient's comorbidities changes. This makes the CCI more complicated
+to match on, since it has to be recalculated every time a control is evaluated
+as a match, since the matching/index date is different for each case. Furthermore,
+the CCI is sometimes defined using a moving time window, eg a fixed lookback
+period of 10 years, making the matching even more complicated. For more
+information on the implementation of the CCI, see the calculate_cci macro.
+
+Here we will show how extensive use of inexact matching conditions, can be
+used to match on the CCI in the special case where we use all comorbidity
+data on patients, not only data in a fixed period before the index date. In this
+scenario the situation is a little more simple as we only need to know the first
+date (if any) of any relevant dianoses used in the CCI definition, to be able to
+define the CCI on any given date.
+
+Extensive use of inexact matching conditions is likely to make the macro
+perform poorly, ie it will take many attempts to find valid matches among
+potential controls. Although, small amounts of anecdotal evidence indicates that
+alternative approaches where all potential controls are first identified for each
+case, and then the CCI is calculated for each potential control before the final
+controls are picked, are still way less efficient.
+
+Matching is done by calculating the CCI on the index date for cases, and 
+by building a complex inexact matching condition that calculates the CCI for
+potential controls on the fly, at the time of evaluating the matching criterias
+for a specific case with a specific index date. */
+
+
+/* CCI definition used in data steps based on dichotomized diagnosis
+dates (does the patient have the disease yes/no) to simplify the
+expression. The dichotomomized variables are defined in the data step
+beforehand. */
+%let cci_def = %str(
+  1*(cci_01_1 + cci_01_2 + cci_01_3 + cci_01_4 + cci_01_5 + cci_01_6 +
+     cci_01_7 + cci_01_8 +
+     (1 - cci_01_17)*cci_01_9 +
+     (1 - cci_01_13)*cci_01_10
+    ) +
+  2*(cci_01_11 + cci_01_12 + cci_01_13 +
+     (1 - cci_01_18)*cci_01_14 +
+     cci_01_15 + cci_01_16
+    ) +
+  3*(cci_01_17) +
+  6*(cci_01_18 + cci_01_19)
+);
+%put &cci_def;
+
+/* CCI matching expression used in hash_match macro call. Notice that 
+we are comparing diagnosis dates on the controls (variables have a
+_ctrl_ prefix) with the index date of the case. */
+%let cci_exp = %str(
+  1*(
+      (. < _ctrl_cci_1 < index_date) + (. < _ctrl_cci_2 < index_date) +
+      (. < _ctrl_cci_3 < index_date) + (. < _ctrl_cci_4 < index_date) +
+      (. < _ctrl_cci_5 < index_date) + (. < _ctrl_cci_6 < index_date) +
+      (. < _ctrl_cci_7 < index_date) + (. < _ctrl_cci_8 < index_date) +
+      (1 - (. < _ctrl_cci_17 < index_date))*(. < _ctrl_cci_9 < index_date) +
+      (1 - (. < _ctrl_cci_13 < index_date))*(. < _ctrl_cci_10 < index_date)
+     ) +
+  2*(
+      (. < _ctrl_cci_11 < index_date) + (. < _ctrl_cci_12 < index_date) +
+      (. < _ctrl_cci_13 < index_date) +
+      (1 - (. < _ctrl_cci_18 < index_date))*(. < _ctrl_cci_14 < index_date) +
+      (. < _ctrl_cci_15 < index_date) + (. < _ctrl_cci_16 < index_date)
+    ) +
+  3*((. < _ctrl_cci_17 < index_date)) +
+  6*((. < _ctrl_cci_18 < index_date) + (. < _ctrl_cci_19 < index_date))
+);
+%let cci_exp = %str(0*(&cci_exp = 0) + 1*(1 <= &cci_exp <= 2) + 2*(&cci_exp >= 3));
+%put &cci_exp;
+
+/* Add first-ever diagnoses of each of the 19 disease groups included in
+the CCI to the data for each id. Based on this we calculate the CCI on the
+index date for cases. */
+%macro _sim_data;
+data dat_cci;
+  /* reorder columns */
+  retain id index_date cci cci_g;
+  set sourcepop;
+  call streaminit(123);
+
+  cci = .;
+  cci_g = .;
+  %do i = 1 %to 19;
+    format cci_&i yymmdd10.;
+    cci_&i = fu_start + round(rand("uniform") * 1000);
+    cci_01_&i = (. < cci_&i < index_date);
+    if rand("uniform") > 0.1 then do;
+      cci_&i = .;
+      cci_01_&i = 0;
+    end;
+  %end;
+  if index_date ne . then do;
+    cci = &cci_def;
+    if cci = 0 then cci_g = 0;
+    else if 1 <= cci <= 2 then cci_g = 1;
+    else if cci >= 3 then cci_g = 2;
+  end;
+  drop cci_01:;
+  keep id index_date cci:;
+run;
+%mend _sim_data;
+%_sim_data;
+
+/* Match on CCI */
+%hash_match(
+  in_ds = dat_cci,
+  out_pf = cci,
+  match_date = index_date,
+  match_inexact = %str(id ne _ctrl_id and &cci_exp = cci_g),
+  n_controls = 10,
+  seed = 1
+);
+
+/* (Re)calculate/update cci and cci_g to the matching date, and check that we
+have indeed succesfully matched on grouped cci. */
+%macro _assess_match;
+data cci_check1;
+  retain __match_id id __case cci cci_g case_cci_g;
+  set cci_matches;
+  by __match_id;
+  if first.__match_id then do;
+    case_cci_g = cci_g;
+  end;
+  %do i = 1 %to 19;
+    cci_01_&i = (. < cci_&i < __match_date);
+  %end;
+  cci = &cci_def;
+  if cci = 0 then cci_g = 0;
+  else if 1 <= cci <= 2 then cci_g = 1;
+  else if cci >= 3 then cci_g = 2;
+  fail_cci = (case_cci_g ne cci_g);
+  drop cci_01: case_cci_g;
+run;
+%mend _assess_match;
+%_assess_match;
+
+proc means data = cci_check1 sum;
+  var fail_cci;
+run;
+
+/*
+The MEANS Procedure
+
+Analysis Variable : fail_cci
+
+                 Sum
+                   0
+
+*/
+
+
+/*******************************************************************************
 TALES OF CAUTION
 *******************************************************************************/
 
@@ -214,7 +375,7 @@ missing value, making the _ctrl_fu_starts <= index_date condition always true. *
 
 /* If we check whether or not the matching conditions are fullfilled in the
 matched data, as we should, we can also easily see that the matching
-creterias are not working as intended. */
+criterias are not working as intended. */
 data misspell_check1;
   set misspell_matches;
   by __match_id;
