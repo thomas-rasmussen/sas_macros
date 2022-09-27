@@ -92,6 +92,24 @@ First version
 
 Matching using a hash-table merge approach
 
+**Version 0.4.0**
+
+- Updated documentation, examples, and tests.
+
+- Fixed a bug, where inexact matching criterias would be evaluated incorrectly(#42)
+
+- Changed the prefix used to refer to variable values for controls in the hash-table from "_ctrl_" to "_".
+
+- Changed how input and output datasets are named and specified as macro parameters, to make the macro parametermore alike to how data arguments are normally specified in SAS procedures. This will hopefully make using the macro feel more natural. See documentation for more information.
+
+- The macro will now throw an error if a variable in <match_inexact> is misspelled, given the misspelled name is not a variable name in <data>. This should hopefully help make it easier to detect misspecified inexact matching criterias.
+
+- The formula used to select a random potential control from the hash-table has been updated, so that it correctly selects among all potential controls with equal probability. This was not the case previously, where the probability of selecting some controls was notably higher/lower if matching was done with replacement and th set of potential controls was very small.
+
+- Removed the <by> parameter from the macro. Variables can be included in <match_exact> to achieve the same result. This is essentially also how <by> variabels were handled by the macro: as additional <match_exact> variables.
+
+- Removed <where> parameter. The input data is almost always fully cleaned before calling the macro. As it should be. WHERE statements are handy, but the implementation in the macro feels forced.
+
 **Version 0.3.4**
 
 - Fixed issue with variables being case-sensitive in some cases. (#37)
