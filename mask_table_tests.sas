@@ -66,7 +66,7 @@ run;
 
 %let vars = 
   class_vars cnt_var id_var value_var n_value cont_vars   
-  by mask_min mask_max mask_avg mask_big ite_max weighted del;      
+  by mask_min mask_max mask_avg ite_max weighted del;      
 
 %macro test1;
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
@@ -122,10 +122,9 @@ mask_min. */
 %mask_table(in_ds = basic5, out_ds = out1, mask_avg = one);
 
 
-/*** mask_big, weighted, and del tests ***/
+/*** weighted, and del tests ***/
 
 /* Check y/n macro parameter inputs */
-%mask_table(in_ds = basic5, out_ds = out1, mask_big = yes);
 %mask_table(in_ds = basic5, out_ds = out1, weighted = yes);
 %mask_table(in_ds = basic5, out_ds = out1, del = yes);
 

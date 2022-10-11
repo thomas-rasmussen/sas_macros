@@ -1,7 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.1.1
-DATE:       2020-04-15
+VERSION:    0.1.2
 ********************************************************************************
 DESCRIPTION:
 Masks/suppresses/censors a table of aggregated counts, if the table contains
@@ -23,10 +22,7 @@ across the classification variables and considering each variable of counts:
    mask it.
 3. If exactly one count has been masked so far, mask the second lowest count.
 
-When the algorithm no longer masks additional counts, it is stopped. Finally,
-since very large counts are often considered just as person-sensitive as low 
-counts (since we know the total), we mask any count that is deemed to close to 
-the total count. If this is not behavior is unwanted, this can be disabled.
+When the algorithm no longer masks additional counts, it is stopped. 
 
 The macro is intended to be used in connection with the pt_char 
 macro. Therefore, the input table needs to follow the same structure as the
@@ -79,10 +75,6 @@ mask_max:   Maximum count value to mask. Must be a non-negative integer,
 mask_avg:   Average to use in algorithm. Default is mask_avg = 1, ie if the
             mean value of the masked counts is less than or equal to 1, then
             an additional count is masked until the mean is larger than one.
-mask_big:   Should large counts close to n_value also be considered person-
-            sensitive, ie if count <= n_value - mask_max < count?
-            - No: mask_big = n
-            - Yes: mark_large = y (default)
 ite_max:    Maximum number of masking algorithm iterations across the 
             classification variables before automatic termination )to avoid 
             infinite loop). Must be a positive integer.
@@ -109,7 +101,6 @@ del:        Delete intermediate datasets created by the macro:
   mask_min      = 1,
   mask_max      = 4,
   mask_avg      = 1,
-  mask_big      = y,
   ite_max       = 20,
   weighted      = n,
   del           = y
@@ -123,7 +114,7 @@ INPUT PARAMETER CHECKS
 
 %let vars = 
   in_ds out_ds class_vars cnt_var id_var value_var n_value cont_vars where      
-  by mask_min mask_max mask_avg mask_big ite_max weighted del;    
+  by mask_min mask_max mask_avg ite_max weighted del;    
 
 /* Check that none of the macro parameters are empty except possibly 
 the "where" macro parameter. */
@@ -146,7 +137,7 @@ supposed to be used, but might have been used anyway´. */
 %end;
 
 /* Make sure all relevant macro parameter values are in lowercase. */
-%let vars = mask_big weighted del;
+%let vars = weighted del;
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
   %let &i_var = %lowcase(&&&i_var);
@@ -363,7 +354,7 @@ one or more digits (so that eg. 0 is not allowed, but 10 is)*/
 
 
 /*** Check that y/n macro parameters are specified correctly */
-%let vars = mask_big weighted del;            
+%let vars = weighted del;            
 %do i = 1 %to %sysfunc(countw(&vars, %str( )));
   %let i_var = %scan(&vars, &i, %str( ));
   %if %eval(&&&i_var in n y) = 0 %then %do;
@@ -800,26 +791,6 @@ data __mt_data7;
   drop __mt_dummy;
 run;
 
-
-/*******************************************************************************
-PRIMARY SUPPRESSING LARGE NUMBERS
-*******************************************************************************/
-
-/* Primary suppression of cells with counts larger than or equal to n - &mask_max. 
-We only need primary suppressing for this since it is done last. Because of
-the inclusion of "dummy" categories for binary variables, we have already done
-this for binary variables. 
-
-The &n_label variable is a special case where suppressing is not applied. Is there
-a more natural way to do this ?*/
-
-%if &mask_big = y %then %do;
-  data __mt_data7;
-    set __mt_data7;
-    if __mt_var_id ne &n_value and __mt_n - &mask_max <= __mt_cnt_masked < __mt_n 
-      then __mt_cnt_masked = .m;
-  run;
-%end;
 
 /*******************************************************************************
 RESTRUCTURE
