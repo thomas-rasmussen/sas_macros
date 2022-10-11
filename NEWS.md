@@ -167,6 +167,10 @@ Should work as intended, but should be used with caution.
 Masks/suppresses/censors a table of aggregated counts, if the table contains
 counts that are deemed person-sensitive.
 
+**Version 0.1.2**
+
+Removed functionality to mask large numbers (#54)
+
 **Version 0.1.1**
 
 Refined how masking of large counts are done. 
