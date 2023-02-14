@@ -1,16 +1,3 @@
-### empirical_cdf
-
-**Version 0.1.0**
-
-First version of empirical_cdf macro that calculates the empirical cumulative distribution function for a variable.
-
-### export_to_csv
-
-Export datasets to CSV.
-
-**Version 0.0.1**
-
-First version.
 
 ### calculate_cci
 
@@ -87,6 +74,29 @@ of the deprecated pt_char macro.
 **Version 0.1.0**
 
 First version
+
+### delete_dataset
+
+Utility macro for flexibly deleting datasets
+
+**Version 0.0.1
+
+First version
+
+
+### empirical_cdf
+
+**Version 0.1.0**
+
+First version of empirical_cdf macro that calculates the empirical cumulative distribution function for a variable.
+
+### export_to_csv
+
+Export datasets to CSV.
+
+**Version 0.0.1**
+
+First version.
 
 ### hash_match
 
