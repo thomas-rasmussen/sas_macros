@@ -288,6 +288,10 @@ Stratification and summarization of risk-time
 
 Smooth time periods.
 
+**Version 0.0.2**
+
+- Fixed bug caused by option varinitchk = error. (#59)
+
 **Version 0.0.1**
 
 - First version

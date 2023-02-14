@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.0.1
+VERSION:    0.0.2
 ********************************************************************************
 DESCRIPTION:
 Smooth time periods.
@@ -385,8 +385,6 @@ data __sp_dat;
     %let i_var = %scan(&keep_first, &i, %str( ));
     retain __first_&i_var;
   %end;
-  %if &start_format ne %then %do; format __tmp_start &start_format; %end;
-  %if &end_format ne %then %do; format __tmp_end &end_format; %end;
   by &by &start &end;
   %if &by ne %then %do; if first.&last_by then do; %end;
   %else %do; if _n_ = 1 then do; %end;

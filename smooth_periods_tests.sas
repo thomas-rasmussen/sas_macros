@@ -111,7 +111,7 @@ run;
 %smooth_periods(data = dat, out = out, by = abc);
 
 /* Check multiple by variables works */
-%smooth_periods(data = dat, out = out, by = id id1);
+%smooth_periods(data = dat, out = out, by = id id_char);
 
 
 /*** <where> ***/
@@ -144,11 +144,10 @@ run;
 /* Check results using data with missing values */
 data dat_miss;
   set dat end = eof;
-  output;
   if eof then do;
     start = .;
-    output;
   end;
+  output;
 run;
 
 %smooth_periods(data = dat_miss, out = out);
