@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Bøjer Rasmussen
-VERSION:    0.0.2
+VERSION:    0.0.3
 ********************************************************************************
 DESCRIPTION:
 Smooth time periods.
@@ -394,13 +394,11 @@ data __sp_dat;
         %let i_var = %scan(&keep_first, &i, %str( ));
         __first_&i_var = &i_var;
       %end;
-    end;
-
-  if __tmp_start <= &start <= __tmp_end + &max_gap then do;
+  end;
+  else if __tmp_start <= &start <= __tmp_end + &max_gap then do;
       __tmp_end = max(__tmp_end, &end);
   end;
-
-  if __tmp_end + &max_gap < &start then do;
+  else if __tmp_end + &max_gap < &start then do;
     __tmp_start = &start;
     __tmp_end = &end;
     %do i = 1 %to %sysfunc(countw(&keep_first, %str( )));
