@@ -1,6 +1,6 @@
 /*******************************************************************************
 AUTHOR:     Thomas Boejer Rasmussen
-VERSION:    0.4.0
+VERSION:    0.4.1
 ********************************************************************************
 DESCRIPTION:
 Creates a matched population from a sourcepopulation with a variable giving
@@ -710,7 +710,7 @@ quit;
 /* Create index. */
 proc sort data = __hm_data2(keep = __merge_id __match_date __strata &inexact_vars) 
     out = __hm_data3(index = (__strata));
-	by __strata;
+  by __strata;
 run;
 
 
@@ -833,7 +833,7 @@ options nonotes;
     %local max_tries_strata;
     %if &max_tries = _auto_ %then %do;
       data _null_;
-     	  k = &n_strata_controls;
+        k = &n_strata_controls;
         p = 0.99;
         max_tries_strata = &n_controls * round(k*(log(k) - log(-log(p))));
         call symput("max_tries_strata", put(max_tries_strata, best12.));
@@ -854,8 +854,8 @@ options nonotes;
             keep = __merge_id __match_date __strata __controls 
                    &inexact_vars
           );
-    	call streaminit(&seed);
-    	length	__hash_key __merge_id_ctrl 8 
+      call streaminit(&seed);
+      length  __hash_key __merge_id_ctrl 8 
         %do j = 1 %to %sysfunc(countw(&inexact_vars, %str( )));
           %let j_var = %scan(&inexact_vars, &j, %str( ));
           _&j_var &&var_&j._length
@@ -864,26 +864,26 @@ options nonotes;
           __list_controls $%eval(&n_controls * 20)
         %end;
         ;
-    	format	__hash_key __merge_id_ctrl best12. 
+      format  __hash_key __merge_id_ctrl best12. 
         %do j = 1 %to %sysfunc(countw(&inexact_vars, %str( )));
           %let j_var = %scan(&inexact_vars, &j, %str( ));
           _&j_var &&var_&j._format
         %end;
         ;
-    	/* Load potential controls into hash object. */	
-    	if _n_ = 1 then do;
-    		declare hash h(dataset: "__hm_strata_controls");
-    		declare hiter iter("h");
-    		h.defineKey("__hash_key");
-    		h.defineData(
-    			"__hash_key", "__merge_id_ctrl"
+      /* Load potential controls into hash object. */ 
+      if _n_ = 1 then do;
+        declare hash h(dataset: "__hm_strata_controls");
+        declare hiter iter("h");
+        h.defineKey("__hash_key");
+        h.defineData(
+          "__hash_key", "__merge_id_ctrl"
           %do j = 1 %to %sysfunc(countw(&inexact_vars, %str( )));
             %let j_var = %scan(&inexact_vars, &j, %str( ));
             , "_&j_var"
           %end;
-    		);
-    		h.defineDone();
-    		call missing(
+        );
+        h.defineDone();
+        call missing(
           __hash_key, __merge_id_ctrl
           %do j = 1 %to %sysfunc(countw(&inexact_vars, %str( )));
             %let j_var = %scan(&inexact_vars, &j, %str( ));
@@ -897,27 +897,27 @@ options nonotes;
         /* Make variable to keep track of the actual highest number of 
         tries needed to find all matches for a case. */
         retain __highest_tries .;
-    	end;
+      end;
 
-    	/* Open case dataset */
-    	set __hm_strata_cases;
+      /* Open case dataset */
+      set __hm_strata_cases;
 
       /* initialize utility variables */
-    	__stop = 0;
-    	__controls = 0;
-    	__tries = 0;
+      __stop = 0;
+      __controls = 0;
+      __tries = 0;
       __match_id + 1;
       %if &replace = m %then %do; __list_controls = ""; %end;  
 
-    	do while (__stop = 0);
-    		__tries + 1;
-    		/* Pick a random potential control. This is ineffective when 
+      do while (__stop = 0);
+        __tries + 1;
+        /* Pick a random potential control. This is ineffective when 
         we match without replacement, since more and more keys wont exist. 
         But since we can't pick a random item from a hash-table directly, it 
         is not possible to do this is in a more efficient way? */
           __rand_obs = ceil(rand("uniform") * &n_strata_controls);
-      		__rc = h.find(key:__rand_obs);
-    		/* Check if key exists and if valid control. */
+          __rc = h.find(key:__rand_obs);
+        /* Check if key exists and if valid control. */
         if __rc = 0 
           %if &replace = m %then %do;
             and findw(__list_controls, put(__rand_obs, best12.), " ", "er") = 0
@@ -925,8 +925,8 @@ options nonotes;
           %if %bquote(&match_inexact) ne %then %do;
             and (&match_inexact)
           %end;
-    		then do;
-    			__controls + 1; 	
+        then do;
+          __controls + 1;   
           /* If matching without replacement, remove matched control
           from hash-table. */
           %if &replace = n %then %do;
@@ -939,10 +939,10 @@ options nonotes;
           %end;
           /* Output matched control. */
           output __hm_strata_matches;
-    		end;
-    		/* When we have found n_control valid controls or we reach the
+        end;
+        /* When we have found n_control valid controls or we reach the
         maximum number of tries we stop the loop. */ 
-    		if __controls >= &n_controls or __tries >= &max_tries_strata then __stop = 1;
+        if __controls >= &n_controls or __tries >= &max_tries_strata then __stop = 1;
    
         /* If we have not found the wanted number of controls for a case
         we output info on the case to a dataset. */
@@ -994,7 +994,7 @@ options nonotes;
           &j_var &&var_&j._length
         %end;
         ;
-    	format __controls best12.
+      format __controls best12.
         %do j = 1 %to %sysfunc(countw(&inexact_vars, %str( )));
           %let j_var = %scan(&inexact_vars, &j, %str( ));
           &j_var &&var_&j._format
@@ -1033,10 +1033,41 @@ options nonotes;
 
   /* Estimate time until all matching is done, based on the median
   matching time in the stratas so far. */
-  %local duration_all duration_median est_finish;
-  %if &i = 1 %then %let duration_all = &duration;
-  %else %let duration_all = &duration_all, &duration;
-  %let duration_median = %sysfunc(median(&duration_all));
+  %local duration_median est_finish;
+  %if &i = 1 %then %do;
+    data __hm_durations;
+      length duration 8;
+      duration = &duration;
+      output;
+    run;
+  %end;
+  %else %do;
+    data __hm_durations;
+      set __hm_durations;
+      if _n_ = 1 then do;
+        output;
+        duration = &duration;
+      end;
+      output;
+    run;
+  %end;
+  /* NOTE: Calculating the median and saving it in a macro variable 
+  is easily done as below, but this causes SAS to run out of RAM when
+  there are many strata. SAS is allocating memory that is not freed up
+  in each iteration? It is unclear why this happens. To circumvent
+  the problem, another less elegant approach is used. */
+/*  proc sql noprint;*/
+/*    select median(duration) into :duration_median*/
+/*      from __hm_durations;*/
+/*  quit;*/
+  proc means data = __hm_durations noprint;
+    output out = __hm_durations_median median(duration) = duration_median;
+  run;
+  data _null_;
+    set __hm_durations_median;
+    call symput("duration_median", put(duration_median, best12.));
+  run;
+
   %let est_finish = 
     %left(%qsysfunc(
       putn(
@@ -1117,7 +1148,7 @@ run;
 /* Cases */
 %local i i_var;
 data __hm_all_matches2_cases;
-	set __hm_all_matches1(
+  set __hm_all_matches1(
     rename = (__match_id = tmp) 
     drop = 
       __merge_id_ctrl
@@ -1126,15 +1157,15 @@ data __hm_all_matches2_cases;
         _&i_var
       %end;
   );
-	length __match_id 8;
-	format __match_id 20.;
-	by __strata tmp;
-	retain __match_id;
-	if _n_ = 1 then __match_id = 0;
-	if first.tmp then do;
-		__match_id + 1;
-		output;
-	end;
+  length __match_id 8;
+  format __match_id 20.;
+  by __strata tmp;
+  retain __match_id;
+  if _n_ = 1 then __match_id = 0;
+  if first.tmp then do;
+    __match_id + 1;
+    output;
+  end;
   drop tmp;
 run;
 
@@ -1149,7 +1180,7 @@ data __hm_all_matches2_controls(
       %end;
       )
   );
-	set __hm_all_matches1(
+  set __hm_all_matches1(
     rename = (__match_id = tmp)
     drop = 
       __merge_id
@@ -1158,19 +1189,19 @@ data __hm_all_matches2_controls(
         &i_var
       %end;
   );
-	length __match_id 8;
-	format __match_id 20.;
-	by __strata tmp;
-	retain __match_id;
-	if _n_ = 1 then __match_id = 0;
-	if first.tmp then do;
-		__match_id = __match_id + 1;
-	end;	
+  length __match_id 8;
+  format __match_id 20.;
+  by __strata tmp;
+  retain __match_id;
+  if _n_ = 1 then __match_id = 0;
+  if first.tmp then do;
+    __match_id = __match_id + 1;
+  end;  
   drop tmp;
 run;
 
 data __hm_all_matches3; 
-	set __hm_all_matches2_cases(in = q1) 
+  set __hm_all_matches2_cases(in = q1) 
       __hm_all_matches2_controls;
   length __case 3;
   format __match_id 20. __case 1.;

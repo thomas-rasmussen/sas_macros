@@ -123,6 +123,11 @@ First version.
 
 Matching using a hash-table merge approach
 
+**Version 0.4.1**
+
+- Fixed bug where exact matching on variables with many levels could cause
+  errors. (#68)
+
 **Version 0.4.0**
 
 - Updated documentation, examples, and tests.

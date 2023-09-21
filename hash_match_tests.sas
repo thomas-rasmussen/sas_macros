@@ -791,3 +791,27 @@ run;
 );
 
 
+/*******************************************************************************
+ISSUE 68
+*******************************************************************************/
+
+/* Check that issue 68 has been fixed, namely that large amounts of strata
+of exact matching variable values will not result in errors due to text
+expression with durations exceeds the maximum length. */
+
+data test;
+  do strata = 1 to 5000;
+  match_date = 0;
+  output;
+  end;
+run;
+
+options notes;
+%hash_match(
+  data = test,
+  out = out,
+  match_date = match_date,
+  match_exact = strata,
+  n_controls = 1,
+  del = n
+);
