@@ -111,11 +111,23 @@ distribution function for a variable.
 # export_to_csv
 ---
 
+DEPRECATED. Use export_to_txt macro instead.
+
 Export datasets to CSV.
 
 **Version 0.0.1**
 
 First version.
+
+---
+# export_to_txt
+---
+
+Export datasets to .txt.
+
+**Version 0.0.1**
+
+First version. Generalization of export_to_csv macro.
 
 ---
 # hash_match
